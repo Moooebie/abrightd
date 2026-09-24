@@ -132,6 +132,7 @@ impl Daemon {
             return;
         };
         if let Ok(mut s) = shared.lock() {
+            s.enabled = self.controller.light_sensor_enabled();
             s.lux = self.controller.ambient_lux();
             s.last_observed_lux = self.controller.last_observed_lux();
             s.slow_lux = self.controller.slow_ambient_lux();

@@ -427,6 +427,32 @@ in-memory only for now (Tier 4 will persist it).
 `main.rs` resolves the profile as: `--config` → `~/.config/abrightd/config.toml`
 → built-in defaults, so CLI commands reflect the running setup.
 
+## 12.2 Plasma applet
+
+`dist/plasma-applet-org.kde.abrightd/` is a Plasma 6 widget plus a small
+`QQmlExtensionPlugin`:
+
+- `metadata.json` + `contents/ui/main.qml` — the applet (panel icon that
+  toggles, popup with a `Switch` and live readings).
+- `plugin/` — CMake project building the QML module `org.kde.abrightd`,
+  exposing the QML type `Controller` (`abrightdcontroller.{h,cpp}`).
+- `install.sh` / `uninstall.sh` — build + install.
+
+`Controller` owns a `QDBusInterface` to `org.abrightd` and exposes
+`available`, `enabled` (read **and write**), `lux`, `brightness`, `adjustment`.
+It polls `Status` every 2 s and watches the bus name so the switch reflects the
+daemon even if it restarts.  `enabled = true/false` calls `Enable(b)`.
+
+Install locations: the QML plugin must be in Qt's import path
+(`$(qmake6 -query QT_INSTALL_QML)/org/kde/abrightd`), hence sudo; the plasmoid
+is installed for the user with
+`kpackagetool6 --type Plasma/Applet --install`.
+
+**Gotcha:** `Status.enabled` must be driven by the controller's real
+`light_sensor_enabled()` (see `Daemon::update_shared`); the applet polls it.  Do
+not reintroduce a local early-return in `setEnabled` — `Enable` is idempotent, so
+the plugin always calls through to avoid getting stuck on stale local state.
+
 ## 13. TUI
 
 `ratatui` + `crossterm`, feature `tui` (implies `dbus`).  It polls `Status`
@@ -489,6 +515,8 @@ cargo clippy --all-features --all-targets
   `udev/90-abrightd-backlight.rules` are shipped.  The unit sets
   `StateDirectory=abrightd`, which systemd may expose as a compatibility
   symlink to `~/.config/abrightd`; both CLI and daemon resolve the same path.
+- `dist/plasma-applet-org.kde.abrightd/` ships the Plasma applet and its QML
+  bridge (§12.2).
 - Install for this machine: copy `target/release/abrightd` to
   `~/.local/bin/abrightd` **after stopping the service** (otherwise `ETXTBSY`).
 

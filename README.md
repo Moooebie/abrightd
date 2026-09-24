@@ -138,6 +138,25 @@ do not spam the OSD.
 > but the Plasma brightness UI will show a stale value.  `kind = "kde"` is the
 > right choice on Plasma.
 
+#### Plasma applet (on/off switch)
+
+A minimal Plasma 6 widget lives in `dist/plasma-applet-org.kde.abrightd`:
+
+```sh
+cd dist/plasma-applet-org.kde.abrightd
+./install.sh          # builds the QML D-Bus bridge (sudo) and installs the applet
+```
+
+Then add **Auto Brightness** via *right-click panel → Add Widgets*.  The panel
+icon toggles abrightd on/off; the popup shows a switch and the live lux /
+brightness.  If the widget reports a missing QML module, restart Plasma once:
+
+```sh
+systemctl --user restart plasma-plasmashell.service
+```
+
+Remove it with `./uninstall.sh`.
+
 Deterministic replay (no sensor or backlight needed):
 
 ```sh

@@ -2,3 +2,6 @@
 
 # Temporary / rolling plans are deliberately not tracked.
 docs/rolling/
+
+# Plasma applet plugin build output.
+dist/plasma-applet-org.kde.abrightd/plugin/build/
