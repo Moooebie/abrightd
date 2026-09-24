@@ -1,8 +1,8 @@
 #include "abrightdcontroller.h"
 
+#include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
-#include <QDBusReply>
 #include <QDBusServiceWatcher>
 
 namespace {
@@ -50,25 +50,28 @@ void AbrightdController::setEnabled(bool value) {
 }
 
 void AbrightdController::refresh() {
-    if (!m_iface.isValid()) {
+    const QDBusMessage msg = m_iface.call(QStringLiteral("Status"));
+    if (msg.type() == QDBusMessage::ErrorMessage || msg.arguments().isEmpty()) {
         setAvailable(false);
         return;
     }
-    const QDBusReply<QVariantMap> reply =
-        m_iface.call(QStringLiteral("Status"));
-    if (!reply.isValid()) {
+    // `Status` returns `a{ss}`; QDBusReply/QVariantMap cannot demarshal that,
+    // so cast the raw argument explicitly.
+    const QMap<QString, QString> map =
+        qdbus_cast<QMap<QString, QString>>(msg.arguments().at(0));
+    if (map.isEmpty()) {
         setAvailable(false);
         return;
     }
     setAvailable(true);
-    applyStatus(reply.value());
+    applyStatus(map);
 }
 
-void AbrightdController::applyStatus(const QVariantMap &status) {
+void AbrightdController::applyStatus(const QMap<QString, QString> &status) {
     bool readingsChanged = false;
 
     const bool enabled =
-        status.value(QStringLiteral("enabled")).toString() == QLatin1String("true");
+        status.value(QStringLiteral("enabled")) == QLatin1String("true");
     if (enabled != m_enabled) {
         m_enabled = enabled;
         Q_EMIT enabledChanged();
@@ -77,7 +80,7 @@ void AbrightdController::applyStatus(const QVariantMap &status) {
     const auto readNumber = [&status](const char *key, double &out) {
         bool ok = false;
         const double value =
-            status.value(QString::fromLatin1(key)).toString().toDouble(&ok);
+            status.value(QString::fromLatin1(key)).toDouble(&ok);
         if (ok && value != out) {
             out = value;
             return true;

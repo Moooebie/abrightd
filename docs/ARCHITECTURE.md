@@ -453,6 +453,12 @@ is installed for the user with
 not reintroduce a local early-return in `setEnabled` — `Enable` is idempotent, so
 the plugin always calls through to avoid getting stuck on stale local state.
 
+**Gotcha:** `Status` returns `a{ss}` (string→string).  Qt cannot demarshal that
+into `QVariantMap`/`QDBusReply<QMap<QString,QString>>`; the plugin calls the
+method raw and uses `qdbus_cast<QMap<QString,QString>>(msg.arguments().at(0))`.
+Regressing this makes `available` false and the applet show "abrightd is not
+running".
+
 **Gotcha:** the applet defines only `fullRepresentation` (the popup with the
 switch).  A custom `compactRepresentation` wrapper prevented Plasma from
 delivering activation, so clicking did nothing; leave the default panel icon to

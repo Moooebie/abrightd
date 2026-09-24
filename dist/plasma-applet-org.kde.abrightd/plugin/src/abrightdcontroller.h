@@ -1,9 +1,9 @@
 #pragma once
 
 #include <QDBusInterface>
+#include <QMap>
 #include <QObject>
 #include <QTimer>
-#include <QVariantMap>
 
 /// QML bridge to the running `org.abrightd` daemon.
 ///
@@ -37,7 +37,7 @@ Q_SIGNALS:
     void statusChanged();
 
 private:
-    void applyStatus(const QVariantMap &status);
+    void applyStatus(const QMap<QString, QString> &status);
     void setAvailable(bool value);
 
     QDBusInterface m_iface;
