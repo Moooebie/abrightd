@@ -1,0 +1,41 @@
+[package]
+name = "abrightd"
+version = "0.1.0"
+edition = "2021"
+description = "Port of Android's automatic brightness pipeline to GNU/Linux"
+license = "Apache-2.0"
+
+[lib]
+name = "abrightd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "abrightd"
+path = "src/main.rs"
+
+[features]
+default = []
+dbus = ["dep:zbus"]
+tui = ["dep:crossterm", "dep:ratatui", "dbus"]
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "sync", "fs"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"
+clap = { version = "4", features = ["derive"] }
+zbus = { version = "4", optional = true, default-features = false, features = ["tokio"] }
+crossterm = { version = "0.28", optional = true }
+ratatui = { version = "0.29", optional = true }
+
+[dev-dependencies]
+proptest = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1

@@ -1,0 +1,27 @@
+[Unit]
+Description=Automatic brightness daemon (AOSP port)
+Documentation=https://github.com/example/autobrightnessd
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/abrightd --config %h/.config/abrightd/config.toml
+Restart=on-failure
+RestartSec=2
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=%h/.local/state/abrightd
+StateDirectory=abrightd
+
+Environment=RUST_LOG=abrightd=info
+
+[Install]
+WantedBy=graphical-session.target

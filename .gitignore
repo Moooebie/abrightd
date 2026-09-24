@@ -1,0 +1,4 @@
+/target
+
+# Temporary / rolling plans are deliberately not tracked.
+docs/rolling/

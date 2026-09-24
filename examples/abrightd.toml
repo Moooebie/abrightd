@@ -1,0 +1,65 @@
+# abrightd example profile
+# Install to ~/.config/abrightd/config.toml (or pass --config).
+
+[als]
+kind = "iio"                 # "iio" or "replay"
+# device = "iio:device0"     # omit to auto-discover
+poll_rate_ms = 200
+# lux_multiplier = 1.0       # per-device calibration factor
+
+[output]
+kind = "logind"              # "logind" (preferred, unprivileged) or "sysfs"
+# device = "intel_backlight" # omit to auto-discover
+gamma = "linear"             # "perceptual" if the sysfs value is already gamma-corrected
+min = 0.0
+max = 1.0
+
+[ramp]
+brighten_step = 0.05
+darken_step = 0.05
+min_interval_ms = 100
+
+[curve]
+max_gamma = 3.0
+lux = [0, 10, 50, 100, 500, 1000, 5000, 10000, 100000]
+bri = [0.03, 0.06, 0.12, 0.2, 0.35, 0.5, 0.7, 0.85, 1.0]
+
+[timing]
+horizon_long_ms = 10000
+horizon_short_ms = 2000
+sensor_rate_ms = 200
+initial_sensor_rate_ms = 1000
+warmup_ms = 0
+brightening_debounce_ms = 2000
+darkening_debounce_ms = 4000
+reset_ambient_lux_after_warm_up = true
+
+# Hysteresis: how much the ambient lux must change before the accepted value
+# moves.  These are the AOSP fallback defaults (single level 0, 10%/20%, no
+# minimum).  Percentages are fractions: 0.10 == 10%.  A non-zero `min` (e.g.
+# 10 lux) widens the dead band and makes low light less responsive.
+[hysteresis.ambient_brightening]
+percentages = [0.10]
+levels = [0.0]
+min = 0.0
+
+[hysteresis.ambient_darkening]
+percentages = [0.20]
+levels = [0.0]
+min = 0.0
+
+# Screen brightness hysteresis (normalized [0, 1]).
+[hysteresis.screen_brightening]
+percentages = [0.10]
+levels = [0.0]
+min = 0.0
+
+[hysteresis.screen_darkening]
+percentages = [0.20]
+levels = [0.0]
+min = 0.0
+
+[learning]
+enabled = true
+short_term_timeout_ms = 1800000
+short_term_threshold_ratio = 0.6

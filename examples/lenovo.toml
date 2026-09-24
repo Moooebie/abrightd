@@ -1,0 +1,28 @@
+# Profile for the Lenovo laptop on this machine.
+#
+# ALS: HID sensor hub "als" at /sys/bus/iio/devices/iio:device0
+#      (exposes in_illuminance_raw + scale=0.001, report-on-change only)
+# Backlight: intel_backlight (max 15360), driven through logind.
+
+[als]
+kind = "iio"
+poll_rate_ms = 200
+# Calibration multiplier; 1.0 means trust in_illuminance_scale.
+lux_multiplier = 1.0
+
+[output]
+kind = "logind"
+device = "intel_backlight"
+gamma = "linear"
+min = 0.0
+max = 1.0
+
+[ramp]
+brighten_step = 0.05
+darken_step = 0.05
+min_interval_ms = 100
+
+[curve]
+max_gamma = 3.0
+lux = [0, 10, 50, 100, 500, 1000, 5000, 10000, 100000]
+bri = [0.03, 0.06, 0.12, 0.2, 0.35, 0.5, 0.7, 0.85, 1.0]

@@ -1,0 +1,7 @@
+# Grant the local session access to the backlight so abrightd does not need root.
+#
+# Option A (systemd-logind uaccess): the active session user gets an ACL.
+#SUBSYSTEM=="backlight", ACTION=="add", TAG+="uaccess"
+
+# Option B (video group): allow members of the "video" group to write brightness.
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/sh -c 'chgrp video /sys/class/backlight/%k/brightness && chmod g+w /sys/class/backlight/%k/brightness'"
