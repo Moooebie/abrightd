@@ -3,7 +3,10 @@
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
+#include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
 #include <QDBusServiceWatcher>
+#include <QDateTime>
 
 namespace {
 constexpr auto kService = "org.abrightd";
@@ -36,13 +39,23 @@ void AbrightdController::setEnabled(bool value) {
         refresh();
         return;
     }
-    // Always call through: the local state may be stale, and Enable is
-    // idempotent, so re-issuing is harmless.
-    const QDBusMessage reply = m_iface.call(QStringLiteral("Enable"), value);
-    if (reply.type() == QDBusMessage::ErrorMessage) {
-        refresh();
-        return;
-    }
+    // Optimistically adopt the requested value and ignore poll results until
+    // the daemon confirms it, so the switch does not flash back.
+    m_pending = true;
+    m_pendingValue = value;
+    m_pendingUntilMs = QDateTime::currentMSecsSinceEpoch() + 3000;
+
+    const QDBusPendingCall pending = m_iface.asyncCall(QStringLiteral("Enable"), value);
+    auto *watcher = new QDBusPendingCallWatcher(pending, this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this,
+            [this](QDBusPendingCallWatcher *call) {
+                call->deleteLater();
+                if (call->isError()) {
+                    m_pending = false;
+                    refresh();
+                }
+            });
+
     if (value != m_enabled) {
         m_enabled = value;
         Q_EMIT enabledChanged();
@@ -72,7 +85,16 @@ void AbrightdController::applyStatus(const QMap<QString, QString> &status) {
 
     const bool enabled =
         status.value(QStringLiteral("enabled")) == QLatin1String("true");
-    if (enabled != m_enabled) {
+
+    // Ignore stale `enabled` values while a requested change is in flight.
+    if (m_pending) {
+        if (enabled == m_pendingValue) {
+            m_pending = false; // daemon confirmed the change
+        } else if (QDateTime::currentMSecsSinceEpoch() >= m_pendingUntilMs) {
+            m_pending = false; // window elapsed; trust the daemon
+        }
+    }
+    if (!m_pending && enabled != m_enabled) {
         m_enabled = enabled;
         Q_EMIT enabledChanged();
     }

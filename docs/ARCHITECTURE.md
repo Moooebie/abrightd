@@ -449,9 +449,14 @@ is installed for the user with
 `kpackagetool6 --type Plasma/Applet --install`.
 
 **Gotcha:** `Status.enabled` must be driven by the controller's real
-`light_sensor_enabled()` (see `Daemon::update_shared`); the applet polls it.  Do
-not reintroduce a local early-return in `setEnabled` — `Enable` is idempotent, so
-the plugin always calls through to avoid getting stuck on stale local state.
+`light_sensor_enabled()` (see `Daemon::update_shared`); the applet polls it
+every 2 s.  The daemon applies `Enable` asynchronously, so a poll right after a
+toggle can read the pre-command value and make the switch flash back.
+`setEnabled` therefore adopts the requested value optimistically and ignores
+`enabled` polls until the daemon confirms it (or a 3 s window elapses); it uses
+`asyncCall` so the GUI thread never blocks.  Middle-click toggles via a
+`MouseArea` with `acceptedButtons: Qt.MiddleButton` on the `PlasmoidItem`; left
+click is left unaccepted so Plasma still opens the popup.
 
 **Gotcha:** `Status` returns `a{ss}` (string→string).  Qt cannot demarshal that
 into `QVariantMap`/`QDBusReply<QMap<QString,QString>>`; the plugin calls the

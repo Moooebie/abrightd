@@ -12,6 +12,14 @@ PlasmoidItem {
         id: backend
     }
 
+    // Middle-click the panel icon to toggle.  Left-click is not accepted here,
+    // so it still opens the popup (handled by Plasma).
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.MiddleButton
+        onClicked: backend.enabled = !backend.enabled
+    }
+
     Plasmoid.title: "Automatic brightness"
     Plasmoid.icon: backend.enabled ? "brightness-high" : "brightness-low"
     toolTipMainText: "Automatic brightness"

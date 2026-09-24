@@ -47,4 +47,8 @@ private:
     double m_lux = 0.0;
     double m_brightness = 0.0;
     double m_adjustment = 0.0;
+    // While a requested change is in flight, ignore stale poll results.
+    bool m_pending = false;
+    bool m_pendingValue = false;
+    qint64 m_pendingUntilMs = 0;
 };
