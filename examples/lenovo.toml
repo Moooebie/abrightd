@@ -2,7 +2,8 @@
 #
 # ALS: HID sensor hub "als" at /sys/bus/iio/devices/iio:device0
 #      (exposes in_illuminance_raw + scale=0.001, report-on-change only)
-# Backlight: intel_backlight (max 15360), driven through logind.
+# Backlight: intel_backlight (max 15360), driven through KDE PowerDevil so the
+# Plasma brightness UI/OSD stays in sync.
 
 [als]
 kind = "iio"
@@ -11,7 +12,7 @@ poll_rate_ms = 200
 lux_multiplier = 1.0
 
 [output]
-kind = "logind"
+kind = "kde"
 device = "intel_backlight"
 gamma = "linear"
 min = 0.0
@@ -26,3 +27,9 @@ min_interval_ms = 100
 max_gamma = 3.0
 lux = [0, 10, 50, 100, 500, 1000, 5000, 10000, 100000]
 bri = [0.03, 0.06, 0.12, 0.2, 0.35, 0.5, 0.7, 0.85, 1.0]
+
+[integration]
+# Learn from KDE brightness keys/slider (PowerDevil signals).
+watch_user_changes = true
+pause_when_locked = true
+pause_on_suspend = true

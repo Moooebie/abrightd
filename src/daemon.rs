@@ -10,6 +10,7 @@ use tracing::{debug, info};
 use crate::als::{AlsSource, Sample};
 use crate::clock::Clock;
 use crate::controller::{AutomaticBrightnessController, ControllerOutput};
+use crate::desktop::Event;
 use crate::output::BacklightSink;
 use crate::ramp::Ramp;
 use crate::state::PersistedState;
@@ -36,6 +37,7 @@ pub struct Daemon {
     last_applied: f32,
     ramp_deadline: Option<i64>,
     shared: Option<Arc<Mutex<SharedState>>>,
+    events: Option<tokio::sync::mpsc::Receiver<Event>>,
 }
 
 impl Daemon {
@@ -46,6 +48,7 @@ impl Daemon {
         sink: Box<dyn BacklightSink>,
         clock: Arc<dyn Clock>,
         shared: Option<Arc<Mutex<SharedState>>>,
+        events: Option<tokio::sync::mpsc::Receiver<Event>>,
     ) -> Self {
         Self {
             controller,
@@ -57,6 +60,7 @@ impl Daemon {
             last_applied: f32::NAN,
             ramp_deadline: None,
             shared,
+            events,
         }
     }
 
@@ -150,6 +154,49 @@ impl Daemon {
         }
     }
 
+    /// Apply an event from the desktop/session.
+    async fn handle_event(&mut self, event: Event) -> anyhow::Result<()> {
+        let now = self.clock.elapsed_realtime_ms();
+        match event {
+            Event::UserBrightness(fraction) => {
+                if !self.controller.light_sensor_enabled() {
+                    return Ok(());
+                }
+                if self.controller.has_valid_ambient_lux() {
+                    let lux = self.controller.ambient_lux();
+                    self.controller
+                        .set_screen_brightness_by_user_at(lux, fraction);
+                    // AOSP samples the event after a debounce; the actual user
+                    // point is applied immediately above.
+                    self.controller.prepare_brightness_adjustment_sample(now);
+                    if let Some(b) = self.controller.refresh_after_user_change(now).brightness {
+                        self.target = b.clamp(0.0, 1.0);
+                    }
+                    info!(
+                        "user brightness change: {:.1}% at {:.2} lx",
+                        fraction * 100.0,
+                        lux
+                    );
+                    self.ramp.reset(fraction.clamp(0.0, 1.0));
+                    self.last_applied = fraction.clamp(0.0, 1.0);
+                    self.update_shared();
+                }
+            }
+            Event::Locked(locked) => {
+                info!("session {}", if locked { "locked" } else { "unlocked" });
+                self.controller.set_light_sensor_enabled(!locked, now);
+            }
+            Event::Suspend(preparing) => {
+                info!(
+                    "system {}",
+                    if preparing { "suspending" } else { "resuming" }
+                );
+                self.controller.set_light_sensor_enabled(!preparing, now);
+            }
+        }
+        Ok(())
+    }
+
     /// Run until the input stream ends or Ctrl-C is received.
     pub async fn run(&mut self, als: &mut dyn AlsSource) -> anyhow::Result<()> {
         let now = self.clock.elapsed_realtime_ms();
@@ -158,6 +205,7 @@ impl Daemon {
         info!("backlight sink: {}", self.sink.description());
 
         let mut ctrl_c = Box::pin(tokio::signal::ctrl_c());
+        let mut events = self.events.take();
 
         loop {
             self.apply_commands();
@@ -182,6 +230,9 @@ impl Daemon {
                 _ = &mut ctrl_c => {
                     info!("received Ctrl-C, shutting down");
                     break;
+                }
+                event = recv_event(&mut events) => {
+                    self.handle_event(event).await?;
                 }
                 sample = als.next() => {
                     let Some(sample) = sample? else {
@@ -301,6 +352,17 @@ pub fn replay(
 
     let _ = last_output;
     points
+}
+
+/// Await the next desktop event, or never complete when there is no channel.
+async fn recv_event(events: &mut Option<tokio::sync::mpsc::Receiver<Event>>) -> Event {
+    match events {
+        Some(rx) => match rx.recv().await {
+            Some(event) => event,
+            None => std::future::pending::<Event>().await,
+        },
+        None => std::future::pending::<Event>().await,
+    }
 }
 
 fn float_equals(a: f32, b: f32) -> bool {

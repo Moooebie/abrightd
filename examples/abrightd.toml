@@ -8,7 +8,7 @@ poll_rate_ms = 200
 # lux_multiplier = 1.0       # per-device calibration factor
 
 [output]
-kind = "logind"              # "logind" (preferred, unprivileged) or "sysfs"
+kind = "logind"              # "logind" | "sysfs" | "kde" (PowerDevil, keeps Plasma in sync)
 # device = "intel_backlight" # omit to auto-discover
 gamma = "linear"             # "perceptual" if the sysfs value is already gamma-corrected
 min = 0.0
@@ -63,3 +63,10 @@ min = 0.0
 enabled = true
 short_term_timeout_ms = 1800000
 short_term_threshold_ratio = 0.6
+
+[integration]
+# Learn from desktop brightness keys/slider (KDE PowerDevil).
+watch_user_changes = true
+# Pause the sensor while the session is locked or the machine is suspended.
+pause_when_locked = true
+pause_on_suspend = true

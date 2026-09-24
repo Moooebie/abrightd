@@ -31,6 +31,8 @@ fidelity, debugging playbook).
 | 3 | IIO `AlsSource` | ✅ |
 | 4 | logind + sysfs `BacklightSink` + ramp | ✅ (logind behind the `dbus` feature) |
 | 5 | config, D-Bus, systemd unit | ✅ (D-Bus behind the `dbus` feature) |
+| 5b | Calibration (Tier 0 `show`, Tier 2 global adjustment) | ✅ |
+| 5c | KDE integration (PowerDevil sink, user-override learning, lock/suspend) | ✅ |
 | 6 | Calibration tool + default profiles | partial (defaults shipped) |
 | 7 | Docs / soak test | partial |
 
@@ -91,6 +93,50 @@ It reads the daemon's `Status` over D-Bus, so it shows the ambient lux (and the
 slow/fast estimates), the commanded backlight with the ramp target marked, the
 light trend and the current adjustment direction (`▲ brightening` /
 `▼ darkening` / `● steady`).  It exits with `q`, `Esc` or `Ctrl-C`.
+
+### Desktop integration (KDE)
+
+On KDE Plasma, set the output to PowerDevil so the Plasma brightness UI and OSD
+stay in sync, and abrightd can learn from the brightness keys:
+
+```toml
+[output]
+kind = "kde"          # drives PowerDevil's BrightnessControl
+
+[integration]
+watch_user_changes = true   # treat brightness keys/slider as user intent
+pause_when_locked = true    # stop adjusting while the session is locked
+pause_on_suspend = true
+```
+
+```sh
+abrightd integrate detect
+```
+
+```
+abrightd desktop integration
+  desktop        KDE Plasma
+  output kind    kde (configured)
+  watch user     true
+  powerdevil     1425 / 10000 (14.2%)
+  sysfs panel    2190 / 15360 (14.3%)
+  DE ALS auto    not supported in this Plasma build (no conflict)
+```
+
+`integrate detect` reports the desktop, the PowerDevil brightness (and whether
+it disagrees with the real panel — i.e. whether `kind = "kde"` is worth using),
+and whether the desktop has its own ambient-light auto-brightness that would
+conflict.
+
+When a user presses the brightness keys or moves the Plasma slider, PowerDevil
+emits `brightnessChanged`; abrightd treats that as a user override, records it
+against the current lux (AOSP short-term learning) and adopts it instead of
+overwriting it.  Auto-adjustments are written with `setBrightnessSilent` so they
+do not spam the OSD.
+
+> Note: `kind = "logind"` still works everywhere and needs fewer moving parts,
+> but the Plasma brightness UI will show a stale value.  `kind = "kde"` is the
+> right choice on Plasma.
 
 Deterministic replay (no sensor or backlight needed):
 

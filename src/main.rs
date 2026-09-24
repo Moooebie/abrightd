@@ -1,6 +1,7 @@
 //! `abrightd` CLI: run the daemon, replay a CSV trace, or calibrate.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
@@ -15,6 +16,9 @@ use abrightd::clock::SystemClock;
 use abrightd::config::Config;
 use abrightd::controller::AutomaticBrightnessController;
 use abrightd::daemon::{self, Daemon};
+use abrightd::desktop::Event;
+#[cfg(feature = "dbus")]
+use abrightd::desktop::{self, Desktop};
 use abrightd::mapping::{infer_auto_brightness_adjustment, BrightnessMappingStrategy};
 use abrightd::output::sysfs::SysfsBacklight;
 use abrightd::output::BacklightSink;
@@ -64,6 +68,17 @@ enum Command {
         #[command(subcommand)]
         action: CalibrateAction,
     },
+    /// Inspect desktop-environment integration (KDE/GNOME).
+    Integrate {
+        #[command(subcommand)]
+        action: IntegrateAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum IntegrateAction {
+    /// Report the detected desktop, brightness ownership and conflicts.
+    Detect,
 }
 
 #[derive(Subcommand, Debug)]
@@ -90,11 +105,13 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     init_tracing(&cli.log_level);
 
-    let config = match &cli.config {
+    // Resolve the profile: explicit --config, else the user's default profile.
+    let config_path = cli.config.clone().or_else(default_config_path);
+    let config = match &config_path {
         Some(path) => Config::load(path).with_context(|| format!("loading {}", path.display()))?,
         None => Config::default(),
     };
-    let config_source = match &cli.config {
+    let config_source = match &config_path {
         Some(path) => path.display().to_string(),
         None => "built-in defaults".into(),
     };
@@ -103,6 +120,12 @@ async fn main() -> anyhow::Result<()> {
         return match action {
             CalibrateAction::Show => run_calibrate_show(&config, &config_source).await,
             CalibrateAction::Adjust(args) => run_calibrate_adjust(&config, args).await,
+        };
+    }
+
+    if let Some(Command::Integrate { action }) = &cli.command {
+        return match action {
+            IntegrateAction::Detect => run_integrate_detect(&config).await,
         };
     }
 
@@ -115,6 +138,17 @@ async fn main() -> anyhow::Result<()> {
     }
 
     run_daemon(config, cli.dry_run).await
+}
+
+/// The user's default profile path (`~/.config/abrightd/config.toml`), if it
+/// exists.  Used when `--config` is not given so CLI commands reflect the
+/// running setup instead of built-in defaults.
+fn default_config_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+    let path = base.join("abrightd/config.toml");
+    path.exists().then_some(path)
 }
 
 fn init_tracing(level: &str) {
@@ -253,6 +287,63 @@ fn sensor_description(config: &Config) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Desktop integration
+// ---------------------------------------------------------------------------
+
+async fn run_integrate_detect(config: &Config) -> anyhow::Result<()> {
+    let desktop = Desktop::detect();
+    println!("abrightd desktop integration");
+    println!("  desktop        {}", desktop.name());
+    println!("  output kind    {} (configured)", config.output.kind);
+    println!("  watch user     {}", config.integration.watch_user_changes);
+    println!(
+        "  pause          locked={} suspend={}",
+        config.integration.pause_when_locked, config.integration.pause_on_suspend
+    );
+
+    #[cfg(feature = "dbus")]
+    {
+        if desktop == Desktop::Kde {
+            let diag = desktop::kde::diagnose().await;
+            match (diag.brightness, diag.max) {
+                (Some(b), Some(m)) if m > 0 => println!(
+                    "  powerdevil     {b} / {m} ({:.1}%)",
+                    b as f32 / m as f32 * 100.0
+                ),
+                _ => println!("  powerdevil     not reachable"),
+            }
+            if let Some((raw, max)) = diag.sysfs {
+                if max > 0 {
+                    println!(
+                        "  sysfs panel    {raw} / {max} ({:.1}%)",
+                        raw as f32 / max as f32 * 100.0
+                    );
+                }
+            }
+            match diag.ambient_auto_brightness {
+                Some(true) => println!(
+                    "  DE ALS auto    ENABLED — conflicts with abrightd; disable it (or use --takeover)"
+                ),
+                Some(false) => println!("  DE ALS auto    disabled"),
+                None => println!(
+                    "  DE ALS auto    not supported in this Plasma build (no conflict)"
+                ),
+            }
+            if diag.is_stale() {
+                println!(
+                    "  note           PowerDevil's value disagrees with the panel; use [output] kind = \"kde\" to keep it in sync"
+                );
+            }
+        }
+    }
+
+    #[cfg(not(feature = "dbus"))]
+    println!("  (built without --features dbus: diagnostics limited)");
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Replay / daemon / TUI
 // ---------------------------------------------------------------------------
 
@@ -336,6 +427,9 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
         other => anyhow::bail!("unknown [als] kind: {other}"),
     };
 
+    let last_commanded = Arc::new(AtomicI32::new(-1));
+    let _ = &last_commanded;
+
     let sink: Box<dyn BacklightSink> = if dry_run {
         Box::new(NullSink)
     } else {
@@ -346,13 +440,30 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
                 abrightd::output::logind::LogindBacklight::connect(config.output.device.as_deref())
                     .await?,
             ),
+            #[cfg(feature = "dbus")]
+            "kde" => Box::new(desktop::kde::KdeSink::connect(last_commanded.clone()).await?),
             #[cfg(not(feature = "dbus"))]
-            "logind" => anyhow::bail!(
-                "logind support was not compiled in; rebuild with --features dbus or use [output] kind = \"sysfs\""
+            "logind" | "kde" => anyhow::bail!(
+                "{0} support was not compiled in; rebuild with --features dbus or use [output] kind = \"sysfs\"",
+                config.output.kind
             ),
             other => anyhow::bail!("unknown [output] kind: {other}"),
         }
     };
+
+    // Desktop/session event channel: user brightness changes, lock, suspend.
+    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<Event>(64);
+    #[cfg(feature = "dbus")]
+    {
+        let desktop = Desktop::detect();
+        if config.integration.pause_when_locked || config.integration.pause_on_suspend {
+            desktop::spawn_session_monitor(event_tx.clone());
+        }
+        if config.integration.watch_user_changes && desktop == Desktop::Kde {
+            desktop::kde::spawn_brightness_monitor(event_tx.clone(), last_commanded.clone());
+        }
+    }
+    drop(event_tx);
 
     info!("starting abrightd");
     let shared = Arc::new(Mutex::new(SharedState::default()));
@@ -378,6 +489,7 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
         sink,
         clock,
         Some(shared),
+        Some(event_rx),
     );
     daemon.run(als.as_mut()).await
 }

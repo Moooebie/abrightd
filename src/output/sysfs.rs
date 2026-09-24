@@ -46,6 +46,17 @@ impl SysfsBacklight {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// The device's maximum raw brightness (sync accessor).
+    pub fn max_raw_sync(&self) -> u32 {
+        self.max_raw
+    }
+
+    /// Read the current raw brightness, e.g. to detect an external writer.
+    pub fn read_raw(&self) -> anyhow::Result<u32> {
+        let raw = std::fs::read_to_string(self.dir.join("brightness"))?;
+        Ok(raw.trim().parse()?)
+    }
 }
 
 #[async_trait]

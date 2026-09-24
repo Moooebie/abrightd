@@ -21,6 +21,28 @@ pub struct Config {
     pub timing: TimingConfig,
     pub hysteresis: HysteresisSection,
     pub learning: LearningConfig,
+    pub integration: IntegrationConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct IntegrationConfig {
+    /// Treat desktop brightness changes (keys/slider) as user intent.
+    pub watch_user_changes: bool,
+    /// Disable the sensor while the session is locked.
+    pub pause_when_locked: bool,
+    /// Disable the sensor while the machine is suspended.
+    pub pause_on_suspend: bool,
+}
+
+impl Default for IntegrationConfig {
+    fn default() -> Self {
+        Self {
+            watch_user_changes: true,
+            pause_when_locked: true,
+            pause_on_suspend: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

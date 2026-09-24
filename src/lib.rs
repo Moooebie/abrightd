@@ -19,6 +19,7 @@ pub mod clock;
 pub mod config;
 pub mod controller;
 pub mod daemon;
+pub mod desktop;
 pub mod hysteresis;
 pub mod mapping;
 pub mod output;

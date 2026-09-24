@@ -61,6 +61,7 @@ Two independent state stores exist:
 | `src/dbus.rs` | `org.abrightd` service + client helpers | — (our addition) |
 | `src/ramp.rs` | output rate limiting | `DisplayPowerController` ramp (replaced) |
 | `src/als/*` | `AlsSource`, IIO sysfs, CSV replay | `SensorManager`/`SensorEventListener` |
+| `src/desktop/*` | DE detection, KDE/PowerDevil sink + event monitors | — (our addition) |
 | `src/output/*` | `BacklightSink`, sysfs, logind | `DisplayPowerController` → backlight |
 | `src/daemon.rs` | event loop, replay harness | `Handler` loop |
 | `src/tui.rs` | live indicator | — (our addition) |
@@ -95,7 +96,8 @@ Two independent state stores exist:
    instead of posting messages.  See §4.
 4. **Ramp is ours.**  AOSP's ramp lives in `DisplayPowerController` and is not
    part of the algorithm; `ramp.rs` is a conservative stand-in.
-5. **Persistence + D-Bus + TUI + calibration** are additions (§11–§13).
+5. **Persistence + D-Bus + TUI + calibration + desktop integration** are
+   additions (§11–§13, §12.1).
 6. **Out of scope:** doze/idle/bedtime modes, foreground-app correction, HBM,
    display white balance, `PhysicalMappingStrategy` (nits profiles).
 7. **Hysteresis defaults.**  AOSP's fallback (no device config) is levels
@@ -377,6 +379,54 @@ the most recent raw sample.  Keep both when diagnosing.
 
 ---
 
+## 12.1 Desktop integration (KDE)
+
+`src/desktop/` bridges the desktop's brightness ownership into the daemon.
+
+- `desktop::Desktop::detect()` reads `XDG_CURRENT_DESKTOP`/`DESKTOP_SESSION`.
+- `desktop::Event` (always available, no feature gate): `UserBrightness(f32)`,
+  `Locked(bool)`, `Suspend(bool)`.
+- Monitors (feature `dbus`) run as tasks and forward to a `tokio::sync::mpsc`
+  channel that the daemon `select!`s on via `recv_event`:
+  - `desktop::kde::spawn_brightness_monitor` — PowerDevil
+    `brightnessChanged(i)`.
+  - `desktop::spawn_session_monitor` — logind (system bus)
+    `Manager.PrepareForSleep` and session `Lock`/`Unlock`.
+- `desktop::kde::KdeSink` implements `BacklightSink` through PowerDevil's
+  `BrightnessControl` (`setBrightnessSilent`, scale `0..brightnessMax`).
+- `desktop::kde::diagnose()` backs `abrightd integrate detect`.
+
+**KDE API facts (verified on Plasma 6):**
+
+- Object `/org/kde/Solid/PowerManagement/Actions/BrightnessControl`, interface
+  `org.kde.Solid.PowerManagement.Actions.BrightnessControl`:
+  `brightness() -> i`, `brightnessMax() -> i`, `setBrightness(i)`,
+  `setBrightnessSilent(i)`, signal `brightnessChanged(i)`.
+- The scale is `0..brightnessMax` (10000), which maps linearly to sysfs.
+- `setBrightness` (non-silent) emits `brightnessChanged` **and** the OSD;
+  `setBrightnessSilent` is used for auto writes.
+- This build has **no** ambient-light auto-brightness (no `Ambient*` keys /
+  strings), so there is nothing to take over.  `~/.config/powerdevilrc` is
+  scanned for an `*ambient*` key to report `Some(true/false)` when a build does
+  support it, else `None`.
+
+**Invariants / loop-guard:** the daemon and `KdeSink` share
+`Arc<AtomicI32> last_commanded`; the brightness monitor ignores any value within
+±1 of it, so our own writes are never mistaken for user input.  `KdeSink::set`
+stores the value *before* calling D-Bus.
+
+**Learning:** on `UserBrightness(f)`, the daemon calls
+`set_screen_brightness_by_user_at(lux, f)` → `prepare_brightness_adjustment_sample`
+→ `refresh_after_user_change`, resets the ramp to `f`, and updates shared state.
+This is the AOSP `userChangedBrightness` path.  The resulting adjusted curve is
+in-memory only for now (Tier 4 will persist it).
+
+**Pause:** `Locked(true)`/`Suspend(true)` disable the sensor;
+`false` re-enables it.
+
+`main.rs` resolves the profile as: `--config` → `~/.config/abrightd/config.toml`
+→ built-in defaults, so CLI commands reflect the running setup.
+
 ## 13. TUI
 
 `ratatui` + `crossterm`, feature `tui` (implies `dbus`).  It polls `Status`
@@ -401,7 +451,7 @@ See `examples/abrightd.toml` for the annotated version.  Defaults:
 | | `device` | auto | name or absolute path |
 | | `poll_rate_ms` | `200` | |
 | | `lux_multiplier` | `1.0` | per-device calibration |
-| `[output]` | `kind` | `"logind"` | `"logind"` (feature `dbus`) or `"sysfs"` |
+| `[output]` | `kind` | `"logind"` | `"logind"` (feature `dbus`), `"sysfs"`, or `"kde"` (PowerDevil, feature `dbus`) |
 | | `min`/`max` | `0.0`/`1.0` | clamps the curve |
 | `[ramp]` | steps / interval | `0.05`/`0.05`/`100 ms` | |
 | `[curve]` | `max_gamma` | `3.0` | |
@@ -413,6 +463,9 @@ See `examples/abrightd.toml` for the annotated version.  Defaults:
 | `[hysteresis.*]` | pct/levels/min | `0.10`/`0.20`, `[0]`, `0` | see §6 |
 | `[learning]` | `short_term_timeout_ms` | `1_800_000` | |
 | | `short_term_threshold_ratio` | `0.6` | (currently not read by controller) |
+| `[integration]` | `watch_user_changes` | `true` | learn from DE brightness keys/slider |
+| | `pause_when_locked` | `true` | |
+| | `pause_on_suspend` | `true` | |
 
 Units: all times ms, lux in lux, brightness normalized `[0,1]`, percentages
 fractions.
@@ -469,6 +522,7 @@ Rules when changing the core:
 systemctl --user status abrightd
 journalctl --user -u abrightd -f
 ~/.local/bin/abrightd calibrate show          # curve + live snapshot
+~/.local/bin/abrightd integrate detect        # desktop/DE conflict check
 busctl --user call org.abrightd /org/abrightd org.abrightd Status
 ```
 
@@ -498,11 +552,12 @@ busctl --user call org.abrightd /org/abrightd org.abrightd Status
 - **Tier 3 — guided multi-point calibration.**  `ratatui` wizard recording
   `(lux, brightness)` anchors; fit a monotone correction in `SimpleMappingStrategy`
   (there is room for a correction step in `adjusted_curve`).
-- **Tier 4 — continuous learning.**  Wire `prepare/collect_brightness_adjustment_sample`
-  to detected external backlight writes (PowerDevil/brightness keys), persist the
-  short-term model, and add a monotone long-term correction (isotonic + forgetting).
-  Extend `PersistedState` and add D-Bus commands; keep the `Command`/`SharedState`
-  pattern.
+- **Tier 4 — continuous learning.**  *Partially done:* KDE `brightnessChanged`
+  (and lock/suspend) are wired through `src/desktop` and feed
+  `set_screen_brightness_by_user_at`.  Remaining: persist the short-term model
+  and a monotone long-term correction (isotonic + forgetting); extend
+  `PersistedState` and add D-Bus commands, keeping the `Command`/`SharedState`
+  pattern.  GNOME can reuse `desktop::Event` with its own monitor.
 - **`PhysicalMappingStrategy`.**  Optional nits profile: implement
   `convert_to_nits` and the nits↔backlight splines in `mapping.rs`.
 - When extending `PersistedState`, add `#[serde(default)]` fields and bump
