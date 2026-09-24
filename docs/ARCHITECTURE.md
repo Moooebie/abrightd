@@ -453,6 +453,11 @@ is installed for the user with
 not reintroduce a local early-return in `setEnabled` — `Enable` is idempotent, so
 the plugin always calls through to avoid getting stuck on stale local state.
 
+**Gotcha:** the applet defines only `fullRepresentation` (the popup with the
+switch).  A custom `compactRepresentation` wrapper prevented Plasma from
+delivering activation, so clicking did nothing; leave the default panel icon to
+Plasma and set `Plasmoid.icon` for the on/off state.
+
 ## 13. TUI
 
 `ratatui` + `crossterm`, feature `tui` (implies `dbus`).  It polls `Status`
