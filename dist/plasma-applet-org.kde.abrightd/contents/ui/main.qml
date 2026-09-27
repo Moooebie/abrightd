@@ -74,30 +74,46 @@ PlasmoidItem {
                 }
             }
 
-            PlasmaComponents.Slider {
-                id: adjustmentSlider
+            Item {
                 Layout.fillWidth: true
-                from: -1.0
-                to: 1.0
-                stepSize: 0.01
-                value: backend.adjustment
-                onMoved: backend.adjustment = value
+                implicitHeight: adjustmentSlider.implicitHeight
+
+                PlasmaComponents.Slider {
+                    id: adjustmentSlider
+                    anchors.fill: parent
+                    from: -1.0
+                    to: 1.0
+                    stepSize: 0.01
+                    value: backend.adjustment
+                    onMoved: backend.adjustment = value
+                }
+
+                // Landmark at 0 (the range is symmetric, so it is the centre).
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 1
+                    height: Math.round(parent.height * 0.5)
+                    color: Kirigami.Theme.textColor
+                    opacity: 0.45
+                }
             }
         }
 
         // --- point calibration indicator + reset (disabled when off) ---
         RowLayout {
             Layout.fillWidth: true
-            visible: backend.available && backend.pointCalibrated
-            enabled: backend.enabled
+            visible: backend.available
             PlasmaComponents.Label {
                 Layout.fillWidth: true
-                text: "Point calibration active"
+                text: backend.pointCalibrated ? "Point calibration active" : ""
                 opacity: 0.8
             }
             PlasmaComponents.Button {
                 text: "Reset calibration"
                 icon.name: "edit-undo"
+                enabled: backend.enabled
+                    && (backend.pointCalibrated || Math.abs(backend.adjustment) > 0.005)
                 onClicked: backend.resetCalibration()
             }
         }

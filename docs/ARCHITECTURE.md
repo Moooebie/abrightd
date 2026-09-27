@@ -459,8 +459,9 @@ in-memory only for now (Tier 4 will persist it).
 `QQmlExtensionPlugin`:
 
 - `metadata.json` + `contents/ui/main.qml` — the applet: panel icon (with
-  middle-click toggle), and a popup with a switch, a global adjustment slider,
-  a point-calibration indicator + reset button, and live readings.
+  middle-click toggle), and a popup with a switch, a global adjustment slider
+  (with a centre landmark at 0), an always-present Reset-calibration button,
+  and live readings.
 - `plugin/` — CMake project building the QML module `org.kde.abrightd`,
   exposing the QML type `Controller` (`abrightdcontroller.{h,cpp}`).
 - `install.sh` / `uninstall.sh` — build + install.
@@ -477,7 +478,10 @@ in-memory only for now (Tier 4 will persist it).
   still sees the pre-command value does not make the control jump back.  The
   adjustment window keeps extending while a slider drag emits repeatedly.
 - The popup disables the slider and reset button when `enabled` is false or the
-  daemon is unavailable; the point row is only visible when `pointCalibrated`.
+  daemon is unavailable.  The reset button is always present and enabled only
+  when there is something to reset (`pointCalibrated` or a non-zero
+  adjustment); the "Point calibration active" label shows only when a point is
+  active.
 - The slider uses `value: backend.adjustment` + `onMoved: backend.adjustment =
   value`, with a `Connections` handler that resyncs `value` on external changes
   unless the slider is being pressed (interaction breaks the binding).
