@@ -30,39 +30,97 @@ PlasmoidItem {
         : "abrightd is not running"
 
     fullRepresentation: ColumnLayout {
-        implicitWidth: Kirigami.Units.gridUnit * 14
-        implicitHeight: Kirigami.Units.gridUnit * 6
+        Layout.minimumWidth: Kirigami.Units.gridUnit * 17
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 17
         spacing: Kirigami.Units.smallSpacing
 
-        PlasmaComponents.Label {
-            Layout.alignment: Qt.AlignHCenter
-            text: "Automatic brightness"
-            font.bold: true
-        }
-
+        // --- on / off ---
         RowLayout {
-            Layout.alignment: Qt.AlignHCenter
-            spacing: Kirigami.Units.smallSpacing
-
+            Layout.fillWidth: true
+            PlasmaComponents.Label {
+                Layout.fillWidth: true
+                text: "Automatic brightness"
+                font.bold: true
+            }
             PlasmaComponents.Switch {
-                id: toggle
                 enabled: backend.available
                 checked: backend.enabled
                 onToggled: backend.enabled = checked
             }
+        }
 
-            PlasmaComponents.Label {
-                text: backend.enabled ? "On" : "Off"
+        Kirigami.Separator {
+            Layout.fillWidth: true
+            visible: backend.available
+        }
+
+        // --- global adjustment (disabled when off) ---
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: backend.available
+            enabled: backend.enabled
+            spacing: 0
+
+            RowLayout {
+                Layout.fillWidth: true
+                PlasmaComponents.Label {
+                    Layout.fillWidth: true
+                    text: "Adjustment"
+                }
+                PlasmaComponents.Label {
+                    text: (backend.adjustment >= 0 ? "+" : "") + backend.adjustment.toFixed(2)
+                    font.family: "monospace"
+                    opacity: 0.8
+                }
+            }
+
+            PlasmaComponents.Slider {
+                id: adjustmentSlider
+                Layout.fillWidth: true
+                from: -1.0
+                to: 1.0
+                stepSize: 0.01
+                value: backend.adjustment
+                onMoved: backend.adjustment = value
             }
         }
 
+        // --- point calibration indicator + reset (disabled when off) ---
+        RowLayout {
+            Layout.fillWidth: true
+            visible: backend.available && backend.pointCalibrated
+            enabled: backend.enabled
+            PlasmaComponents.Label {
+                Layout.fillWidth: true
+                text: "Point calibration active"
+                opacity: 0.8
+            }
+            PlasmaComponents.Button {
+                text: "Reset calibration"
+                icon.name: "edit-undo"
+                onClicked: backend.resetCalibration()
+            }
+        }
+
+        // --- live readings ---
         PlasmaComponents.Label {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.fillWidth: true
             opacity: 0.7
             font: Kirigami.Theme.smallFont
             text: backend.available
                 ? backend.lux.toFixed(1) + " lx  ·  " + (backend.brightness * 100).toFixed(0) + "%"
                 : "abrightd is not running"
+        }
+    }
+
+    // Keep the slider in sync when the adjustment changes externally (poll) or
+    // after a reset, but never fight the user mid-drag.
+    Connections {
+        target: backend
+        function onAdjustmentChanged() {
+            if (!adjustmentSlider.pressed) {
+                adjustmentSlider.value = backend.adjustment;
+            }
         }
     }
 }

@@ -458,21 +458,37 @@ in-memory only for now (Tier 4 will persist it).
 `dist/plasma-applet-org.kde.abrightd/` is a Plasma 6 widget plus a small
 `QQmlExtensionPlugin`:
 
-- `metadata.json` + `contents/ui/main.qml` — the applet (panel icon that
-  toggles, popup with a `Switch` and live readings).
+- `metadata.json` + `contents/ui/main.qml` — the applet: panel icon (with
+  middle-click toggle), and a popup with a switch, a global adjustment slider,
+  a point-calibration indicator + reset button, and live readings.
 - `plugin/` — CMake project building the QML module `org.kde.abrightd`,
   exposing the QML type `Controller` (`abrightdcontroller.{h,cpp}`).
 - `install.sh` / `uninstall.sh` — build + install.
 
 `Controller` owns a `QDBusInterface` to `org.abrightd` and exposes
-`available`, `enabled` (read **and write**), `lux`, `brightness`, `adjustment`.
-It polls `Status` every 2 s and watches the bus name so the switch reflects the
-daemon even if it restarts.  `enabled = true/false` calls `Enable(b)`.
+`available`, `enabled` (RW), `adjustment` (RW, `[-1, 1]`), `pointCalibrated`
+(from the non-empty `user_points`), `lux`, `brightness`, plus
+`resetCalibration()`.  It polls `Status` every 2 s and watches the bus name.
+
+- `enabled = …` → `Enable(b)`; `adjustment = …` → `SetAdjustment(d)`;
+  `resetCalibration()` → `ResetCalibration()`.
+- All three use `asyncCall` (never block the GUI thread) and an **optimistic
+  pending window** (3 s for `enabled`, 1.5 s for `adjustment`) so a poll that
+  still sees the pre-command value does not make the control jump back.  The
+  adjustment window keeps extending while a slider drag emits repeatedly.
+- The popup disables the slider and reset button when `enabled` is false or the
+  daemon is unavailable; the point row is only visible when `pointCalibrated`.
+- The slider uses `value: backend.adjustment` + `onMoved: backend.adjustment =
+  value`, with a `Connections` handler that resyncs `value` on external changes
+  unless the slider is being pressed (interaction breaks the binding).
 
 Install locations: the QML plugin must be in Qt's import path
 (`$(qmake6 -query QT_INSTALL_QML)/org/kde/abrightd`), hence sudo; the plasmoid
 is installed for the user with
 `kpackagetool6 --type Plasma/Applet --install`.
+
+Use `Layout.minimumWidth`/`Layout.preferredWidth` on `fullRepresentation` for
+the popup size — setting `implicitWidth` does not size it.
 
 **Gotcha:** `Status.enabled` must be driven by the controller's real
 `light_sensor_enabled()` (see `Daemon::update_shared`); the applet polls it

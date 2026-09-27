@@ -138,18 +138,30 @@ do not spam the OSD.
 > but the Plasma brightness UI will show a stale value.  `kind = "kde"` is the
 > right choice on Plasma.
 
-#### Plasma applet (on/off switch)
+#### Plasma applet
 
-A minimal Plasma 6 widget lives in `dist/plasma-applet-org.kde.abrightd`:
+A Plasma 6 widget lives in `dist/plasma-applet-org.kde.abrightd`:
 
 ```sh
 cd dist/plasma-applet-org.kde.abrightd
 ./install.sh          # builds the QML D-Bus bridge (sudo) and installs the applet
 ```
 
-Then add **Auto Brightness** via *right-click panel → Add Widgets*.  The panel
-icon toggles abrightd on/off; the popup shows a switch and the live lux /
-brightness.  If the widget reports a missing QML module, restart Plasma once:
+Then add **Auto Brightness** via *right-click panel → Add Widgets*.  The popup
+contains:
+
+- an **on/off switch** (the panel icon reflects the state; **middle-click** the
+  icon toggles it),
+- a **global adjustment slider** (`-1.00 … +1.00`, step `0.01`) with the current
+  value shown — this is AOSP's whole-curve gamma,
+- a **point calibration** indicator with a **Reset calibration** button, shown
+  when a learned user point is active,
+- the live lux / brightness.
+
+The adjustment slider and the reset button are **disabled while abrightd is
+switched off** (or while the daemon is not reachable).
+
+If the widget reports a missing QML module, restart Plasma once:
 
 ```sh
 systemctl --user restart plasma-plasmashell.service
