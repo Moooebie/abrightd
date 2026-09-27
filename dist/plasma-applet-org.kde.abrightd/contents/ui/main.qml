@@ -20,14 +20,15 @@ PlasmoidItem {
         onClicked: backend.enabled = !backend.enabled
     }
 
-    Plasmoid.title: "Automatic brightness"
+    Plasmoid.title: i18n("Automatic brightness")
     Plasmoid.icon: backend.enabled ? "brightness-high" : "brightness-low"
-    toolTipMainText: "Automatic brightness"
+    toolTipMainText: i18n("Automatic brightness")
     toolTipSubText: backend.available
-        ? (backend.enabled ? "On" : "Off") +
-          "  ·  " + backend.lux.toFixed(1) + " lx" +
-          "  ·  " + (backend.brightness * 100).toFixed(0) + "%"
-        : "abrightd is not running"
+        ? i18n("%1 · %2 lx · %3%",
+               backend.enabled ? i18n("On") : i18n("Off"),
+               backend.lux.toFixed(1),
+               (backend.brightness * 100).toFixed(0))
+        : i18n("abrightd is not running")
 
     fullRepresentation: ColumnLayout {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 17
@@ -39,7 +40,7 @@ PlasmoidItem {
             Layout.fillWidth: true
             PlasmaComponents.Label {
                 Layout.fillWidth: true
-                text: "Automatic brightness"
+                text: i18n("Automatic brightness")
                 font.bold: true
             }
             PlasmaComponents.Switch {
@@ -65,7 +66,7 @@ PlasmoidItem {
                 Layout.fillWidth: true
                 PlasmaComponents.Label {
                     Layout.fillWidth: true
-                    text: "Adjustment"
+                    text: i18n("Adjustment")
                 }
                 PlasmaComponents.Label {
                     text: (backend.adjustment >= 0 ? "+" : "") + backend.adjustment.toFixed(2)
@@ -106,11 +107,11 @@ PlasmoidItem {
             visible: backend.available
             PlasmaComponents.Label {
                 Layout.fillWidth: true
-                text: backend.pointCalibrated ? "Point calibration active" : ""
+                text: backend.pointCalibrated ? i18n("Point calibration active") : ""
                 opacity: 0.8
             }
             PlasmaComponents.Button {
-                text: "Reset calibration"
+                text: i18n("Reset calibration")
                 icon.name: "edit-undo"
                 enabled: backend.enabled
                     && (backend.pointCalibrated || Math.abs(backend.adjustment) > 0.005)
@@ -124,8 +125,10 @@ PlasmoidItem {
             opacity: 0.7
             font: Kirigami.Theme.smallFont
             text: backend.available
-                ? backend.lux.toFixed(1) + " lx  ·  " + (backend.brightness * 100).toFixed(0) + "%"
-                : "abrightd is not running"
+                ? i18n("%1 lx · %2%",
+                       backend.lux.toFixed(1),
+                       (backend.brightness * 100).toFixed(0))
+                : i18n("abrightd is not running")
         }
     }
 

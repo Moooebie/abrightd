@@ -495,6 +495,14 @@ is installed for the user with
 Use `Layout.minimumWidth`/`Layout.preferredWidth` on `fullRepresentation` for
 the popup size — setting `implicitWidth` does not size it.
 
+**Translations:** QML strings use `i18n()`, and the applet package ships
+`po/*.po`.  `install.sh` compiles them with `msgfmt` and installs
+`/usr/share/locale/<lang>/LC_MESSAGES/plasma_applet_org.kde.abrightd.mo` (the
+catalog domain is `plasma_applet_<pluginId>`; `TEXTDOMAINDIR` is *not* honored
+by `KLocalizedString`).  `metadata.json` carries `Name[zh_CN]` /
+`Description[zh_CN]`.  Simplified Chinese is provided; the daemon/CLI is
+English-only by design.
+
 **Gotcha:** `Status.enabled` must be driven by the controller's real
 `light_sensor_enabled()` (see `Daemon::update_shared`); the applet polls it
 every 2 s.  The daemon applies `Enable` asynchronously, so a poll right after a

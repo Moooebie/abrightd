@@ -1,0 +1,44 @@
+# Simplified Chinese translation for the abrightd Plasma applet.
+# Copyright (C) 2026 the abrightd authors.  Apache-2.0.
+msgid ""
+msgstr ""
+"Project-Id-Version: plasma_applet_org.kde.abrightd\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-28 00:00+0800\n"
+"PO-Revision-Date: 2026-09-28 00:00+0800\n"
+"Last-Translator: abrightd\n"
+"Language-Team: Simplified Chinese\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Automatic brightness"
+msgstr "自动亮度"
+
+msgid "On"
+msgstr "开"
+
+msgid "Off"
+msgstr "关"
+
+msgid "Adjustment"
+msgstr "整体调节"
+
+msgid "Point calibration active"
+msgstr "已应用单点校准"
+
+msgid "Reset calibration"
+msgstr "重置校准"
+
+msgid "abrightd is not running"
+msgstr "abrightd 未在运行"
+
+#, kde-format
+msgid "%1 lx · %2%"
+msgstr "%1 lx · %2%"
+
+#, kde-format
+msgid "%1 · %2 lx · %3%"
+msgstr "%1 · %2 lx · %3%"

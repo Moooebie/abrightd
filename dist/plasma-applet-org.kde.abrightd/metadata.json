@@ -2,7 +2,9 @@
     "KPlugin": {
         "Id": "org.kde.abrightd",
         "Name": "Auto Brightness",
+        "Name[zh_CN]": "自动亮度",
         "Description": "Toggle abrightd automatic screen brightness",
+        "Description[zh_CN]": "开关 abrightd 自动屏幕亮度",
         "Icon": "brightness-high",
         "Authors": [
             { "Name": "abrightd" }

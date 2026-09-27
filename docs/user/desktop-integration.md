@@ -80,7 +80,9 @@ If the widget reports a missing QML module, reload Plasma once:
 systemctl --user restart plasma-plasmashell.service
 ```
 
-Remove the widget with `./install-desktop.sh --uninstall`.
+Remove the widget with `./install-desktop.sh --uninstall`.  The applet is
+localized (English and Simplified Chinese); the catalog is installed alongside
+the QML plugin.
 
 ## GNOME
 

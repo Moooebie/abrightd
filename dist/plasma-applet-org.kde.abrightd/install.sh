@@ -22,6 +22,22 @@ else
     kpackagetool6 --type Plasma/Applet --install "$here"
 fi
 
+echo "== installing translations (sudo) =="
+if command -v msgfmt >/dev/null 2>&1; then
+    for po in "$here"/po/*.po; do
+        [ -f "$po" ] || continue
+        lang=$(basename "$po" .po)
+        mo=$(mktemp)
+        msgfmt -o "$mo" "$po"
+        sudo install -Dm644 "$mo" \
+            "/usr/share/locale/$lang/LC_MESSAGES/plasma_applet_org.kde.abrightd.mo"
+        rm -f "$mo"
+        echo "  installed $lang catalog"
+    done
+else
+    echo "  msgfmt (gettext) not found; skipping translations"
+fi
+
 echo
 echo "Done. Add 'Auto Brightness' via: right-click panel > Add Widgets."
 echo "If the widget reports a missing QML module, restart Plasma:"
