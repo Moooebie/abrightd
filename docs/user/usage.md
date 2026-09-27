@@ -75,6 +75,7 @@ for your panel.  After editing, `systemctl --user restart abrightd`.
 
 ```
 abrightd [--config PATH] [--log-level LEVEL]            # run the daemon
+abrightd --version                                      # print the version
 abrightd --tui [--interval-ms MS]                       # live indicator
 abrightd --replay CSV [--dump-brightness]               # deterministic replay
 abrightd --dry-run                                      # sensor only, no output

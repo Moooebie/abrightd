@@ -599,6 +599,10 @@ cargo clippy --all-features --all-targets
   symlink to `~/.config/abrightd`; both CLI and daemon resolve the same path.
 - `dist/plasma-applet-org.kde.abrightd/` ships the Plasma applet and its QML
   bridge (§12.2).
+- **Version:** `build.rs` sets `ABRIGHTD_VERSION` from `git describe --tags
+  --exact-match` → the tag (leading `v` stripped) at a release, otherwise
+  `dev`.  It is shown by `abrightd --version` / `--help` and logged at startup.
+  Release = create a tag (`git tag v0.2.0`); no source edits.
 - Manual reinstall: copy `target/release/abrightd` to `~/.local/bin/abrightd`
   **after stopping the service** (otherwise `ETXTBSY`).
 

@@ -18,9 +18,10 @@ use abrightd::config::{
 };
 use abrightd::controller::AutomaticBrightnessController;
 use abrightd::daemon::{self, Daemon};
-use abrightd::desktop::Event;
 #[cfg(feature = "dbus")]
-use abrightd::desktop::{self, Desktop};
+use abrightd::desktop;
+use abrightd::desktop::Desktop;
+use abrightd::desktop::Event;
 use abrightd::mapping::{
     infer_auto_brightness_adjustment, BrightnessMappingStrategy, SimpleMappingStrategy,
 };
@@ -30,8 +31,15 @@ use abrightd::ramp::Ramp;
 use abrightd::state::PersistedState;
 use abrightd::status::SharedState;
 
+/// Version shown by `--version`; `dev` off a release tag (see `build.rs`).
+const VERSION: &str = env!("ABRIGHTD_VERSION");
+
 #[derive(Parser, Debug)]
-#[command(name = "abrightd", about = "AOSP automatic brightness for GNU/Linux")]
+#[command(
+    name = "abrightd",
+    about = "AOSP automatic brightness for GNU/Linux",
+    version = VERSION
+)]
 struct Cli {
     /// Path to a TOML profile.  Built-in defaults are used if omitted.
     #[arg(short, long)]
@@ -618,7 +626,7 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
     }
     drop(event_tx);
 
-    info!("starting abrightd");
+    info!("starting abrightd {VERSION}");
     let shared = Arc::new(Mutex::new(SharedState::default()));
 
     // Keep the D-Bus connection alive for the lifetime of the daemon; dropping

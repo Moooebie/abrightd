@@ -72,6 +72,7 @@ q / Esc / Ctrl-C to quit
 
 ```
 abrightd [--config PATH] [--log-level LEVEL]            # 运行守护进程
+abrightd --version                                      # 查看版本号
 abrightd --tui [--interval-ms MS]                       # 实时指示器
 abrightd --replay CSV [--dump-brightness]               # 确定性回放
 abrightd --dry-run                                      # 只读传感器，不输出
