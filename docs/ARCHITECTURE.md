@@ -39,7 +39,7 @@ Two independent state stores exist:
 | Store | Owner | Contents |
 |---|---|---|
 | config TOML | user | static profile (curve, timing, hysteresis, sink) |
-| `state.toml` | daemon + `calibrate` CLI | mutable calibration (`adjustment`; later: learned knots) |
+| `state.toml` | daemon + `calibrate` CLI | mutable calibration (adjustment + user points) |
 
 ---
 
@@ -346,14 +346,16 @@ wall-clock sleeps whenever you need reproducibility.
   `adjustment`, `user_points` (`"lux:brightness;…"`).
 - Service `org.abrightd` at `/org/abrightd` on the **session** bus.  Methods:
   `Enable(bool)`, `SetProfile(string)`, `AddUserPoint(d, d)`,
-  `ClearUserPoints()`, `SetAdjustment(d)`, `Status()`.
+  `ClearUserPoints()`, `SetAdjustment(d)`, `ResetCalibration()`, `Status()`.
 - `apply_commands()` drains the queue, then **immediately** calls
-  `refresh_after_user_change` for any command (AOSP's `isManuallySet`), and
-  persists `state.toml` when `SetAdjustment` was applied.
+  `refresh_after_user_change` for any command (AOSP's `isManuallySet`).  Any
+  command that changes the calibration (`SetAdjustment`, `AddUserPoint`,
+  `ClearUserPoints`, `ResetCalibration`) marks it dirty and triggers a debounced
+  `state.toml` write.
 - `serve()` returns the `Connection`; the caller **must hold it** for the
   daemon's lifetime or the bus name is released (this was a real bug).
-- `fetch_status()` / `set_adjustment()` are the client helpers used by
-  `calibrate`.
+- `fetch_status()` / `set_adjustment()` / `reset_calibration()` are the client
+  helpers used by `calibrate`.
 
 `lux` is the *accepted* (post-hysteresis) ambient value; `last_observed_lux` is
 the most recent raw sample.  Keep both when diagnosing.
@@ -362,20 +364,44 @@ the most recent raw sample.  Keep both when diagnosing.
 
 ## 12. Calibration & persistence
 
-`PersistedState { schema_version, adjustment }` in `state.toml`.
+`PersistedState { schema_version = 2, adjustment, user_points: [UserPoint] }` in
+`state.toml`.  It stores the **net calibration**: the global adjustment and the
+user point(s), so a restart reproduces the exact curve.
 
 - `state_dir()` prefers `$STATE_DIRECTORY` (systemd `StateDirectory=`), then
   `$XDG_STATE_HOME/abrightd`, then `$HOME/.local/state/abrightd`.
 - `save()` writes a temp file then `rename`s (atomic).
-- `load()` returns defaults on missing/malformed input (forward-compatible).
-- The daemon applies `adjustment` **before** constructing the controller, both
-  in `run_daemon` and `run_replay`.
-- `abrightd calibrate show` prints the base vs. adjusted curve, sensor info and
-  live `Status`.  `calibrate adjust --value <a>` sets it directly;
-  `--point <lux> <brightness>` infers against the base curve.  Both prefer the
-  live D-Bus path (which persists) and fall back to writing `state.toml`.
+- `load()` returns defaults on missing/malformed input; v1 files (adjustment
+  only) still load because every field is `#[serde(default)]`.
+- **Restore:** `AutomaticBrightnessController::restore_calibration(adjustment,
+  point)` sets the adjustment and then calls
+  `BrightnessMappingStrategy::restore_user_point`, which inserts the point
+  **without re-inferring** the adjustment.  Calling `add_user_data_point` here
+  would overwrite the saved adjustment and change the net effect.  The daemon
+  calls this in `run_daemon`/`run_replay`.
+- **Save triggers:** `SetAdjustment`, `AddUserPoint`, `ClearUserPoints`,
+  `ResetCalibration`, and a `UserBrightness` override.  Writes are debounced by
+  500 ms (`mark_calibration_dirty` → `save_deadline`, folded into the loop
+  deadline) and flushed on shutdown.  `persist_calibration()` builds the state
+  from the live controller (`get_auto_brightness_adjustment` +
+  `mapper().get_user_{lux,brightness}`).
+- **Reset:** `ResetCalibration` (D-Bus) / `abrightd calibrate reset` calls
+  `reset_calibration()` (clear points, adjustment → 0) and persists the cleared
+  state.  `abrightd profile reset` rewrites the profile's calibration sections
+  (`[curve]`, `[hysteresis]`, `[timing]`, `[ramp]`, `[learning]`) to defaults,
+  preserving `[als]`/`[output]`/`[integration]`, and backs up the old file.
+- `abrightd calibrate show` prints base vs. adjusted for the persisted
+  adjustment **and** point.
+- Config `f32` fields use `#[serde(with = "round_f32")]` /
+  `round_f32_vec` so generated profiles are readable (`0.01`, not
+  `0.009999999776482582`); they serialize as `f64` for this reason.
 - Bump `SCHEMA_VERSION` for incompatible changes; add fields with
   `#[serde(default)]`.
+
+**Precedence (AOSP semantics):** adding a point recomputes and *replaces* the
+adjustment (inferred against the raw base curve), and `clear_user_data_points`
+zeroes the adjustment.  Persisting both reproduces the net effect; "reset" is
+therefore uncalibrated (adjustment 0, no points).
 
 ---
 
@@ -585,6 +611,9 @@ busctl --user call org.abrightd /org/abrightd org.abrightd Status
 - **Terminal garbage after TUI** → it should restore on exit; if killed with
   `SIGKILL` it cannot — run `reset`/`stty sane`.
 - **`ETXTBSY` on install** → stop the service first.
+- **Want a clean slate** → `abrightd calibrate reset` (adjustment + points) or
+  `abrightd profile reset` (profile calibration sections); both support
+  `--backup`/`--yes`.
 
 ---
 
@@ -598,10 +627,11 @@ busctl --user call org.abrightd /org/abrightd org.abrightd Status
   (there is room for a correction step in `adjusted_curve`).
 - **Tier 4 — continuous learning.**  *Partially done:* KDE `brightnessChanged`
   (and lock/suspend) are wired through `src/desktop` and feed
-  `set_screen_brightness_by_user_at`.  Remaining: persist the short-term model
-  and a monotone long-term correction (isotonic + forgetting); extend
-  `PersistedState` and add D-Bus commands, keeping the `Command`/`SharedState`
-  pattern.  GNOME can reuse `desktop::Event` with its own monitor.
+  `set_screen_brightness_by_user_at`; the resulting point is now persisted and
+  restored (see §12).  Remaining: keep a *history* of points and fit a monotone
+  long-term correction (isotonic + forgetting) instead of a single point, and
+  add a `ReloadProfile` D-Bus method so `profile reset` need not restart the
+  daemon.  GNOME can reuse `desktop::Event` with its own monitor.
 - **`PhysicalMappingStrategy`.**  Optional nits profile: implement
   `convert_to_nits` and the nits↔backlight splines in `mapping.rs`.
 - When extending `PersistedState`, add `#[serde(default)]` fields and bump

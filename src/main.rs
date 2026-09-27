@@ -13,13 +13,17 @@ use abrightd::als::iio::IioSysfs;
 use abrightd::als::replay::Replay;
 use abrightd::als::AlsSource;
 use abrightd::clock::SystemClock;
-use abrightd::config::Config;
+use abrightd::config::{
+    Config, CurveConfig, HysteresisSection, LearningConfig, RampSection, TimingConfig,
+};
 use abrightd::controller::AutomaticBrightnessController;
 use abrightd::daemon::{self, Daemon};
 use abrightd::desktop::Event;
 #[cfg(feature = "dbus")]
 use abrightd::desktop::{self, Desktop};
-use abrightd::mapping::{infer_auto_brightness_adjustment, BrightnessMappingStrategy};
+use abrightd::mapping::{
+    infer_auto_brightness_adjustment, BrightnessMappingStrategy, SimpleMappingStrategy,
+};
 use abrightd::output::sysfs::SysfsBacklight;
 use abrightd::output::BacklightSink;
 use abrightd::ramp::Ramp;
@@ -73,6 +77,11 @@ enum Command {
         #[command(subcommand)]
         action: IntegrateAction,
     },
+    /// Manage the configuration profile file.
+    Profile {
+        #[command(subcommand)]
+        action: ProfileAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -82,11 +91,29 @@ enum IntegrateAction {
 }
 
 #[derive(Subcommand, Debug)]
+enum ProfileAction {
+    /// Reset the profile's calibration sections to the built-in defaults.
+    Reset(ResetArgs),
+}
+
+#[derive(Args, Debug)]
+struct ResetArgs {
+    /// Back up the existing file before resetting.
+    #[arg(long)]
+    backup: bool,
+    /// Do not prompt for confirmation.
+    #[arg(long)]
+    yes: bool,
+}
+
+#[derive(Subcommand, Debug)]
 enum CalibrateAction {
     /// Print the effective lux -> brightness curve and live readings.
     Show,
     /// Set the global auto-brightness adjustment.
     Adjust(AdjustArgs),
+    /// Reset the learned calibration (adjustment and user points).
+    Reset(ResetArgs),
 }
 
 #[derive(Args, Debug)]
@@ -120,12 +147,19 @@ async fn main() -> anyhow::Result<()> {
         return match action {
             CalibrateAction::Show => run_calibrate_show(&config, &config_source).await,
             CalibrateAction::Adjust(args) => run_calibrate_adjust(&config, args).await,
+            CalibrateAction::Reset(args) => run_calibrate_reset(args).await,
         };
     }
 
     if let Some(Command::Integrate { action }) = &cli.command {
         return match action {
             IntegrateAction::Detect => run_integrate_detect(&config).await,
+        };
+    }
+
+    if let Some(Command::Profile { action }) = &cli.command {
+        return match action {
+            ProfileAction::Reset(args) => run_profile_reset(&config_path, args),
         };
     }
 
@@ -140,14 +174,21 @@ async fn main() -> anyhow::Result<()> {
     run_daemon(config, cli.dry_run).await
 }
 
-/// The user's default profile path (`~/.config/abrightd/config.toml`), if it
-/// exists.  Used when `--config` is not given so CLI commands reflect the
-/// running setup instead of built-in defaults.
-fn default_config_path() -> Option<PathBuf> {
+/// The user's default profile path (`~/.config/abrightd/config.toml`),
+/// whether or not it exists.
+fn user_config_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    let path = base.join("abrightd/config.toml");
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("abrightd/config.toml")
+}
+
+/// The user's default profile path, if the file exists.  Used when `--config`
+/// is not given so CLI commands reflect the running setup instead of built-in
+/// defaults.
+fn default_config_path() -> Option<PathBuf> {
+    let path = user_config_path();
     path.exists().then_some(path)
 }
 
@@ -157,17 +198,14 @@ fn init_tracing(level: &str) {
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }
 
-/// Build the mapping strategy from config and apply the persisted adjustment.
-fn mapper_with_state(
-    config: &Config,
-    state: &PersistedState,
-) -> anyhow::Result<Box<dyn BrightnessMappingStrategy>> {
-    let mut mapper = config.mapper()?;
-    let adjustment = state.adjustment_clamped();
-    if adjustment != 0.0 {
-        mapper.set_auto_brightness_adjustment(adjustment);
-    }
-    Ok(Box::new(mapper))
+/// Build the mapping strategy from config, with no calibration applied.
+fn build_mapper(config: &Config) -> anyhow::Result<SimpleMappingStrategy> {
+    config.mapper()
+}
+
+/// The persisted user point as `(lux, brightness)`, if any.
+fn state_point(state: &PersistedState) -> Option<(f32, f32)> {
+    state.single_user_point().map(|p| (p.lux, p.brightness))
 }
 
 // ---------------------------------------------------------------------------
@@ -182,13 +220,17 @@ const SHOW_LUX: [f32; 12] = [
 async fn run_calibrate_show(config: &Config, config_source: &str) -> anyhow::Result<()> {
     let state = PersistedState::load();
     let adjustment = state.adjustment_clamped();
+    let point = state_point(&state);
 
-    let mut mapper = config.mapper()?;
+    let mut mapper = build_mapper(config)?;
     let base: Vec<f32> = SHOW_LUX
         .iter()
         .map(|lux| mapper.get_brightness(*lux))
         .collect();
     mapper.set_auto_brightness_adjustment(adjustment);
+    if let Some((lux, brightness)) = point {
+        mapper.restore_user_point(lux, brightness);
+    }
     let adjusted: Vec<f32> = SHOW_LUX
         .iter()
         .map(|lux| mapper.get_brightness(*lux))
@@ -204,6 +246,12 @@ async fn run_calibrate_show(config: &Config, config_source: &str) -> anyhow::Res
     match sensor_description(config) {
         Some(description) => println!("  sensor      {description}"),
         None => println!("  sensor      [als] kind={}", config.als.kind),
+    }
+    match point {
+        Some((lux, brightness)) => {
+            println!("  user point  lux {lux:.2}, brightness {brightness:.4}")
+        }
+        None => println!("  user point  none"),
     }
 
     println!();
@@ -267,6 +315,104 @@ async fn run_calibrate_adjust(config: &Config, args: &AdjustArgs) -> anyhow::Res
         "  adjustment saved to {} ({new_adjustment:+.3}); it applies on next start",
         abrightd::state::state_path().display()
     );
+    Ok(())
+}
+
+/// Ask for confirmation unless `--yes` was given or stdin is not a terminal.
+fn confirm(prompt: &str, yes: bool) -> anyhow::Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        return Ok(true);
+    }
+    eprint!("{prompt} [y/N] ");
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(matches!(
+        line.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
+async fn run_calibrate_reset(args: &ResetArgs) -> anyhow::Result<()> {
+    if !confirm(
+        "Reset calibration (adjustment and user points) to uncalibrated defaults?",
+        args.yes,
+    )? {
+        println!("aborted");
+        return Ok(());
+    }
+
+    if args.backup {
+        let path = abrightd::state::state_path();
+        if path.exists() {
+            let backup = path.with_extension("toml.bak");
+            std::fs::copy(&path, &backup)?;
+            println!("  backed up {} -> {}", path.display(), backup.display());
+        }
+    }
+
+    // Prefer the running daemon (which also persists).
+    #[cfg(feature = "dbus")]
+    {
+        match abrightd::dbus::reset_calibration().await {
+            Ok(()) => {
+                println!("  calibration reset via org.abrightd (persisted)");
+                return Ok(());
+            }
+            Err(err) => println!("  daemon not reachable ({err}); clearing state file"),
+        }
+    }
+
+    PersistedState::cleared().save()?;
+    println!("  cleared {}", abrightd::state::state_path().display());
+    Ok(())
+}
+
+fn run_profile_reset(config_path: &Option<PathBuf>, args: &ResetArgs) -> anyhow::Result<()> {
+    let target = config_path.clone().unwrap_or_else(user_config_path);
+    if !confirm(
+        &format!(
+            "Reset profile {} calibration sections to built-in defaults?",
+            target.display()
+        ),
+        args.yes,
+    )? {
+        println!("aborted");
+        return Ok(());
+    }
+
+    if args.backup && target.exists() {
+        let backup = target.with_extension("toml.bak");
+        std::fs::copy(&target, &backup)?;
+        println!("  backed up {} -> {}", target.display(), backup.display());
+    }
+
+    // Keep the device/DE wiring; reset the calibration-relevant sections.
+    let mut config = if target.exists() {
+        Config::load(&target)?
+    } else {
+        Config::default()
+    };
+    config.curve = CurveConfig::default();
+    config.hysteresis = HysteresisSection::default();
+    config.timing = TimingConfig::default();
+    config.ramp = RampSection::default();
+    config.learning = LearningConfig::default();
+
+    let text = format!(
+        "# abrightd profile (calibration reset to built-in defaults)\n\
+         # [als], [output] and [integration] are preserved from the previous profile.\n\n{}",
+        toml::to_string_pretty(&config)?
+    );
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&target, text)?;
+    println!("  wrote {}", target.display());
+    println!("  restart to apply: systemctl --user restart abrightd");
     Ok(())
 }
 
@@ -353,8 +499,11 @@ fn run_replay(path: &Path, config: &Config, dump: bool) -> anyhow::Result<()> {
     let samples = replay.into_vec();
 
     let state = PersistedState::load();
-    let mapper = mapper_with_state(config, &state)?;
-    let mut controller = AutomaticBrightnessController::new(config.controller_config()?, mapper);
+    let mut controller = AutomaticBrightnessController::new(
+        config.controller_config()?,
+        Box::new(build_mapper(config)?),
+    );
+    controller.restore_calibration(state.adjustment_clamped(), state_point(&state));
     let mut ramp = Ramp::new(config.ramp_config());
 
     let points = daemon::replay(&mut controller, &mut ramp, &samples);
@@ -399,14 +548,18 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
     let clock: Arc<dyn abrightd::clock::Clock> = Arc::new(SystemClock::new());
 
     let state = PersistedState::load();
-    let mapper = mapper_with_state(&config, &state)?;
-    if state.adjustment_clamped() != 0.0 {
+    let mut controller = AutomaticBrightnessController::new(
+        config.controller_config()?,
+        Box::new(build_mapper(&config)?),
+    );
+    controller.restore_calibration(state.adjustment_clamped(), state_point(&state));
+    if state.adjustment_clamped() != 0.0 || state.single_user_point().is_some() {
         info!(
-            "loaded persisted adjustment {:+}",
-            state.adjustment_clamped()
+            "loaded persisted calibration: adjustment {:+}, point {:?}",
+            state.adjustment_clamped(),
+            state_point(&state)
         );
     }
-    let controller = AutomaticBrightnessController::new(config.controller_config()?, mapper);
     let ramp = Ramp::new(config.ramp_config());
 
     let mut als: Box<dyn AlsSource> = match config.als.kind.as_str() {

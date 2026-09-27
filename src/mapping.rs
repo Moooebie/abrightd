@@ -23,6 +23,9 @@ pub trait BrightnessMappingStrategy: Send + Sync {
     /// Returns `true` if the adjustment changed.
     fn set_auto_brightness_adjustment(&mut self, adjustment: f32) -> bool;
     fn add_user_data_point(&mut self, lux: f32, brightness: f32);
+    /// Restore a persisted user point *without* re-inferring the adjustment, so
+    /// the saved net effect is reproduced exactly.
+    fn restore_user_point(&mut self, lux: f32, brightness: f32);
     fn clear_user_data_points(&mut self);
     fn has_user_data_points(&self) -> bool;
     fn short_term_model_timeout_ms(&self) -> u64;
@@ -155,6 +158,16 @@ impl BrightnessMappingStrategy for SimpleMappingStrategy {
         let unadjusted = self.unadjusted_brightness(lux);
         self.auto_brightness_adjustment =
             infer_auto_brightness_adjustment(self.max_gamma, brightness, unadjusted);
+        self.user_lux = lux;
+        self.user_brightness = brightness;
+        let _ = self.compute_spline();
+    }
+
+    fn restore_user_point(&mut self, lux: f32, brightness: f32) {
+        if lux == NO_USER_LUX || brightness == NO_USER_BRIGHTNESS {
+            return;
+        }
+        // Set the point and the adjustment *independently*; do not re-infer.
         self.user_lux = lux;
         self.user_brightness = brightness;
         let _ = self.compute_spline();
@@ -386,5 +399,24 @@ mod tests {
         m.clear_user_data_points();
         assert!(!m.has_user_data_points());
         assert_eq!(m.get_auto_brightness_adjustment(), 0.0);
+    }
+
+    #[test]
+    fn restore_reproduces_the_net_effect() {
+        // Live: adding a point overwrites the adjustment (AOSP).
+        let mut live = SimpleMappingStrategy::default_curve();
+        live.add_user_data_point(250.0, 0.42);
+        let adjustment = live.get_auto_brightness_adjustment();
+
+        // Restored: apply the saved adjustment, then insert the point directly.
+        let mut restored = SimpleMappingStrategy::default_curve();
+        restored.set_auto_brightness_adjustment(adjustment);
+        restored.restore_user_point(250.0, 0.42);
+
+        for lux in [0.0f32, 10.0, 40.0, 250.0, 1000.0, 5000.0, 100_000.0] {
+            let a = live.get_brightness(lux);
+            let b = restored.get_brightness(lux);
+            assert!((a - b).abs() < 1e-6, "lux {lux}: live {a} != restored {b}");
+        }
     }
 }

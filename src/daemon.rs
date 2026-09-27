@@ -13,7 +13,7 @@ use crate::controller::{AutomaticBrightnessController, ControllerOutput};
 use crate::desktop::Event;
 use crate::output::BacklightSink;
 use crate::ramp::Ramp;
-use crate::state::PersistedState;
+use crate::state::{PersistedState, UserPoint};
 use crate::status::{Command, SharedState};
 
 /// One point of a replayed trace.
@@ -38,6 +38,8 @@ pub struct Daemon {
     ramp_deadline: Option<i64>,
     shared: Option<Arc<Mutex<SharedState>>>,
     events: Option<tokio::sync::mpsc::Receiver<Event>>,
+    calibration_dirty: bool,
+    save_deadline: Option<i64>,
 }
 
 impl Daemon {
@@ -61,6 +63,8 @@ impl Daemon {
             ramp_deadline: None,
             shared,
             events,
+            calibration_dirty: false,
+            save_deadline: None,
         }
     }
 
@@ -86,7 +90,7 @@ impl Daemon {
             s.commands.drain(..).collect()
         };
         let mut applied = false;
-        let mut adjustment_changed = false;
+        let mut calibration_changed = false;
         for command in commands {
             applied = true;
             match command {
@@ -97,14 +101,22 @@ impl Daemon {
                 Command::AddUserPoint { lux, brightness } => {
                     self.controller
                         .set_screen_brightness_by_user_at(lux, brightness);
+                    calibration_changed = true;
                 }
-                Command::ClearUserPoints => self.controller.reset_short_term_model(),
+                Command::ClearUserPoints => {
+                    self.controller.reset_short_term_model();
+                    calibration_changed = true;
+                }
                 Command::SetProfile(name) => info!("profile change requested: {name}"),
                 Command::SetAdjustment(value) => {
                     self.controller
                         .mapper_mut()
                         .set_auto_brightness_adjustment(value);
-                    adjustment_changed = true;
+                    calibration_changed = true;
+                }
+                Command::ResetCalibration => {
+                    self.controller.reset_calibration();
+                    calibration_changed = true;
                 }
             }
         }
@@ -116,15 +128,44 @@ impl Daemon {
                 self.target = b.clamp(0.0, 1.0);
             }
         }
-        if adjustment_changed {
-            let state = PersistedState {
-                schema_version: PersistedState::SCHEMA_VERSION,
-                adjustment: self.controller.get_auto_brightness_adjustment(),
-            };
-            if let Err(err) = state.save() {
-                tracing::warn!("could not persist calibration state: {err:#}");
-            }
+        if calibration_changed {
+            let now = self.clock.elapsed_realtime_ms();
+            self.mark_calibration_dirty(now);
         }
+    }
+
+    /// Schedule a debounced write of the calibration state.
+    fn mark_calibration_dirty(&mut self, now_ms: i64) {
+        self.calibration_dirty = true;
+        self.save_deadline = Some(now_ms + 500);
+    }
+
+    fn persist_if_due(&mut self, now_ms: i64) {
+        if self.calibration_dirty && self.save_deadline.is_none_or(|t| now_ms >= t) {
+            self.persist_calibration();
+        }
+    }
+
+    /// Write the current net calibration (adjustment + user point) to disk.
+    fn persist_calibration(&mut self) {
+        let user_points = if self.controller.has_user_data_points() {
+            vec![UserPoint {
+                lux: self.controller.mapper().get_user_lux(),
+                brightness: self.controller.mapper().get_user_brightness(),
+            }]
+        } else {
+            Vec::new()
+        };
+        let state = PersistedState {
+            schema_version: PersistedState::SCHEMA_VERSION,
+            adjustment: self.controller.get_auto_brightness_adjustment(),
+            user_points,
+        };
+        if let Err(err) = state.save() {
+            tracing::warn!("could not persist calibration state: {err:#}");
+        }
+        self.calibration_dirty = false;
+        self.save_deadline = None;
     }
 
     fn update_shared(&self) {
@@ -180,6 +221,7 @@ impl Daemon {
                     );
                     self.ramp.reset(fraction.clamp(0.0, 1.0));
                     self.last_applied = fraction.clamp(0.0, 1.0);
+                    self.mark_calibration_dirty(now);
                     self.update_shared();
                 }
             }
@@ -209,13 +251,17 @@ impl Daemon {
         let mut events = self.events.take();
 
         loop {
+            let now = self.clock.elapsed_realtime_ms();
             self.apply_commands();
-            let deadline = match (self.controller.next_wakeup_ms(), self.ramp_deadline) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (Some(a), None) => Some(a),
-                (None, Some(b)) => Some(b),
-                (None, None) => None,
-            };
+            self.persist_if_due(now);
+            let deadline = [
+                self.controller.next_wakeup_ms(),
+                self.ramp_deadline,
+                self.save_deadline,
+            ]
+            .into_iter()
+            .flatten()
+            .min();
             let clock = self.clock.clone();
             let sleep = async move {
                 match deadline {
@@ -249,6 +295,9 @@ impl Daemon {
                     self.advance(now, out).await?;
                 }
             }
+        }
+        if self.calibration_dirty {
+            self.persist_calibration();
         }
         Ok(())
     }

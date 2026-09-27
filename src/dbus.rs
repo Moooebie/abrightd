@@ -57,6 +57,11 @@ impl Abrightd {
         self.push(Command::SetAdjustment(value as f32));
     }
 
+    /// Clear the persisted calibration (adjustment and user points).
+    async fn reset_calibration(&self) {
+        self.push(Command::ResetCalibration);
+    }
+
     /// Return the current pipeline snapshot.
     async fn status(&self) -> HashMap<String, String> {
         self.state.lock().map(|s| s.as_map()).unwrap_or_default()
@@ -88,5 +93,14 @@ pub async fn set_adjustment(value: f32) -> anyhow::Result<()> {
     let proxy =
         zbus::Proxy::new(&connection, "org.abrightd", "/org/abrightd", "org.abrightd").await?;
     proxy.call_method("SetAdjustment", &(value as f64)).await?;
+    Ok(())
+}
+
+/// Ask the running daemon to reset its calibration.
+pub async fn reset_calibration() -> anyhow::Result<()> {
+    let connection = zbus::Connection::session().await?;
+    let proxy =
+        zbus::Proxy::new(&connection, "org.abrightd", "/org/abrightd", "org.abrightd").await?;
+    proxy.call_method("ResetCalibration", &()).await?;
     Ok(())
 }

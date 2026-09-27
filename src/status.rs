@@ -11,6 +11,7 @@ pub enum Command {
     ClearUserPoints,
     SetProfile(String),
     SetAdjustment(f32),
+    ResetCalibration,
 }
 
 /// A snapshot of the pipeline, updated by the daemon after every step.

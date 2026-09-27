@@ -574,6 +574,23 @@ impl AutomaticBrightnessController {
         self.short_term.reset();
     }
 
+    /// Restore a persisted calibration (adjustment + optional user point),
+    /// reproducing the saved net curve exactly.
+    pub fn restore_calibration(&mut self, adjustment: f32, point: Option<(f32, f32)>) {
+        self.mapper.set_auto_brightness_adjustment(adjustment);
+        if let Some((lux, brightness)) = point {
+            self.mapper.restore_user_point(lux, brightness);
+            self.short_term.set_user_brightness(lux, brightness);
+        }
+    }
+
+    /// Reset to uncalibrated: clear user points and zero the adjustment (AOSP).
+    pub fn reset_calibration(&mut self) {
+        self.mapper.clear_user_data_points();
+        self.mapper.set_auto_brightness_adjustment(0.0);
+        self.short_term.reset();
+    }
+
     /// `ShortTermModel.maybeReset`: reset when invalidated and the lux moved
     /// far enough away from the anchor, otherwise re-validate.
     fn short_term_maybe_reset(&mut self, current_lux: f32) -> bool {

@@ -206,14 +206,38 @@ abrightd calibrate adjust --point 40 0.20
 base curve using AOSP's `inferAutoBrightnessAdjustment`, so the curve then
 passes through your chosen brightness at that lux.
 
-The adjustment is stored in `$XDG_STATE_HOME/abrightd/state.toml`
-(`~/.local/state/abrightd/state.toml` by default).  When the daemon is running
-it is applied live through `org.abrightd` (and persisted by the daemon);
-otherwise it is written to disk and takes effect on the next start.
+### Persistence
+
+The **net effect** of calibration — the global adjustment *and* any learned
+user point(s) — is saved to `$XDG_STATE_HOME/abrightd/state.toml`
+(`~/.local/state/abrightd/state.toml` by default) and restored on the next
+start, so your tuned curve survives a reboot.  A brightness-key override while
+the daemon runs is learned and persisted the same way (debounced by ~0.5 s).
+
+AOSP semantics apply: adding a point recomputes and **replaces** the global
+adjustment (it is inferred against the raw base curve), so the saved pair
+reproduces exactly the curve you were looking at.
+
+### Reset
+
+```sh
+# Back to the uncalibrated curve (adjustment 0, no user points)
+abrightd calibrate reset            # prompts; add --yes, and --backup to keep a copy
+
+# Restore the profile file's calibration sections to the shipped defaults
+abrightd profile reset --backup     # keeps [als], [output], [integration]
+```
+
+`calibrate reset` clears the persisted calibration and applies live through
+`org.abrightd` (D-Bus `ResetCalibration`) when the daemon is running.
+`profile reset` rewrites the profile with default `[curve]`, `[hysteresis]`,
+`[timing]`, `[ramp]` and `[learning]`, preserving your sensor/backlight/desktop
+sections, and backs the old file up to `config.toml.bak`; restart the daemon to
+apply it.
 
 This is the first calibration tier.  Planned follow-ups: sensor (lux)
-calibration, a guided multi-point wizard, and continuous local learning from
-your brightness changes.
+calibration, a guided multi-point wizard, and a longer-term learner (history of
+points fitted into a correction curve).
 
 ## Hardware bring-up
 

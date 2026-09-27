@@ -4,14 +4,50 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::controller::ControllerConfig;
 use crate::hysteresis::HysteresisLevels;
 use crate::mapping::SimpleMappingStrategy;
 use crate::ramp::RampConfig;
 
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Round `f32` fields to 6 decimals when serializing, so generated TOML is
+/// readable (`0.01` rather than `0.009999999776482582`).
+mod round_f32 {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &f32, serializer: S) -> Result<S::Ok, S::Error> {
+        // Serialize as f64 so toml writes the shortest form (0.05, not
+        // 0.05000000074505806).
+        serializer.serialize_f64((*value as f64 * 1e6).round() / 1e6)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
+        Ok(f64::deserialize(deserializer)? as f32)
+    }
+}
+
+/// As [`round_f32`], for `Vec<f32>`.
+mod round_f32_vec {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &[f32], serializer: S) -> Result<S::Ok, S::Error> {
+        let rounded: Vec<f64> = value
+            .iter()
+            .map(|v| (*v as f64 * 1e6).round() / 1e6)
+            .collect();
+        rounded.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<f32>, D::Error> {
+        Ok(Vec::<f64>::deserialize(deserializer)?
+            .into_iter()
+            .map(|v| v as f32)
+            .collect())
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub als: AlsConfig,
@@ -24,7 +60,7 @@ pub struct Config {
     pub integration: IntegrationConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IntegrationConfig {
     /// Treat desktop brightness changes (keys/slider) as user intent.
@@ -45,7 +81,7 @@ impl Default for IntegrationConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AlsConfig {
     /// `"iio"` or `"replay"`.
@@ -57,6 +93,7 @@ pub struct AlsConfig {
     /// Poll period for sysfs reads.
     pub poll_rate_ms: i64,
     /// Per-device calibration multiplier applied to computed lux.
+    #[serde(with = "round_f32")]
     pub lux_multiplier: f32,
 }
 
@@ -72,7 +109,7 @@ impl Default for AlsConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OutputConfig {
     /// `"logind"` or `"sysfs"`.
@@ -82,8 +119,10 @@ pub struct OutputConfig {
     /// `"linear"` or `"perceptual"`.
     pub gamma: String,
     /// Minimum normalized brightness to ever command.
+    #[serde(with = "round_f32")]
     pub min: f32,
     /// Maximum normalized brightness to ever command.
+    #[serde(with = "round_f32")]
     pub max: f32,
 }
 
@@ -99,10 +138,12 @@ impl Default for OutputConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RampSection {
+    #[serde(with = "round_f32")]
     pub brighten_step: f32,
+    #[serde(with = "round_f32")]
     pub darken_step: f32,
     pub min_interval_ms: i64,
 }
@@ -117,11 +158,14 @@ impl Default for RampSection {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CurveConfig {
+    #[serde(with = "round_f32")]
     pub max_gamma: f32,
+    #[serde(with = "round_f32_vec")]
     pub lux: Vec<f32>,
+    #[serde(with = "round_f32_vec")]
     pub bri: Vec<f32>,
 }
 
@@ -137,7 +181,7 @@ impl Default for CurveConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TimingConfig {
     pub horizon_long_ms: i64,
@@ -148,6 +192,7 @@ pub struct TimingConfig {
     pub brightening_debounce_ms: i64,
     pub darkening_debounce_ms: i64,
     pub reset_ambient_lux_after_warm_up: bool,
+    #[serde(with = "round_f32")]
     pub doze_scale_factor: f32,
 }
 
@@ -167,15 +212,18 @@ impl Default for TimingConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HysteresisPairConfig {
+    #[serde(with = "round_f32_vec")]
     pub percentages: Vec<f32>,
+    #[serde(with = "round_f32_vec")]
     pub levels: Vec<f32>,
+    #[serde(with = "round_f32")]
     pub min: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HysteresisSection {
     pub ambient_brightening: HysteresisPairConfig,
@@ -223,11 +271,12 @@ impl Default for HysteresisSection {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LearningConfig {
     pub enabled: bool,
     pub short_term_timeout_ms: u64,
+    #[serde(with = "round_f32")]
     pub short_term_threshold_ratio: f32,
 }
 
@@ -313,6 +362,18 @@ mod tests {
         let c = Config::default();
         c.mapper().unwrap();
         c.controller_config().unwrap();
+    }
+
+    #[test]
+    fn serialization_rounds_floats() {
+        // Generated profiles (e.g. `profile reset`) must not contain f32 noise.
+        let text = toml::to_string_pretty(&Config::default()).unwrap();
+        assert!(
+            text.contains("brighten_step = 0.05"),
+            "not rounded:\n{text}"
+        );
+        assert!(text.contains("0.03"), "curve not rounded:\n{text}");
+        assert!(!text.contains("999999"), "f32 noise present:\n{text}");
     }
 
     #[test]
