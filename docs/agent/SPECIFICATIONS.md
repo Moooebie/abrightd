@@ -180,18 +180,25 @@ injected `Clock` and no I/O.
 ### 4.1 Repository layout
 
 ```
-autobrightnessd/
+abrightd/
   Cargo.toml
-  README.md
+  README.md            # human-facing overview (start here)
+  build.sh             # one-command build
+  install.sh           # one-command daemon install
+  install-desktop.sh   # desktop components (KDE applet)
+  Makefile             # `make build|install|install-desktop|test`
   docs/
-    SPECIFICATIONS.md  # this document
-    ARCHITECTURE.md    # maintainer-facing implementation notes
-    rolling/           # temporary plans (git-excluded)
+    user/              # human usage docs
+    agent/
+      SPECIFICATIONS.md  # this document
+      ARCHITECTURE.md    # implementation notes
+      rolling/           # temporary plans (git-excluded)
   examples/
     abrightd.toml      # annotated profile
     lenovo.toml        # reference machine profile
   systemd/abrightd.service
   udev/90-abrightd-backlight.rules
+  dist/plasma-applet-org.kde.abrightd/   # KDE Plasma widget
   src/
     main.rs            # CLI + daemon lifecycle
     lib.rs
@@ -208,7 +215,7 @@ autobrightnessd/
     status.rs          # shared state + command queue
     dbus.rs            # org.abrightd control/status service
     tui.rs             # live indicator
-    logging / etc.
+    desktop/           # KDE/GNOME integration
     als/
       mod.rs           # AlsSource trait
       iio.rs           # sysfs discovery + polling

@@ -1,6 +1,6 @@
 # abrightd — implementation notes
 
-Maintainer/agent-facing companion to [`../README.md`](../README.md).  The README
+Maintainer/agent-facing companion to [`../../README.md`](../../README.md).  The README
 explains *what* abrightd does and how to use it; this document explains *how it
 is built*, where the sharp edges are, and the conventions to preserve when
 changing it.
@@ -464,7 +464,8 @@ in-memory only for now (Tier 4 will persist it).
   and live readings.
 - `plugin/` — CMake project building the QML module `org.kde.abrightd`,
   exposing the QML type `Controller` (`abrightdcontroller.{h,cpp}`).
-- `install.sh` / `uninstall.sh` — build + install.
+- `install.sh` / `uninstall.sh` — build + install the applet (invoked by the
+  top-level `./install-desktop.sh`).
 
 `Controller` owns a `QDBusInterface` to `org.abrightd` and exposes
 `available`, `enabled` (RW), `adjustment` (RW, `[-1, 1]`), `pointCalibrated`
@@ -573,14 +574,25 @@ cargo clippy --all-features --all-targets
 - `main.rs` always needs `clap`; only `dbus`/`tui` are optional.  There is no
   `cli` feature (an earlier one was removed because `main.rs` used clap
   unconditionally).
+- **One-command scripts** (also wrapped by `make`):
+  - `build.sh` → `cargo build --release --features ${FEATURES:-tui}`.
+  - `install.sh` → binary to `$PREFIX/bin`, the systemd unit (with paths
+    substituted), a default profile only if absent, then
+    `systemctl --user daemon-reload && enable --now`.
+  - `install-desktop.sh` → desktop components (`--uninstall` to remove); it
+    delegates to `dist/plasma-applet-org.kde.abrightd/install.sh`.
+  - `uninstall.sh` → stops/disables the service and removes binary + unit
+    (keeps config and state).
+  - `Makefile` targets: `build`, `install`, `install-desktop`, `uninstall`,
+    `test`, `fmt`, `clippy`, `clean`.
 - `systemd/abrightd.service` (`systemd --user`) and
   `udev/90-abrightd-backlight.rules` are shipped.  The unit sets
   `StateDirectory=abrightd`, which systemd may expose as a compatibility
   symlink to `~/.config/abrightd`; both CLI and daemon resolve the same path.
 - `dist/plasma-applet-org.kde.abrightd/` ships the Plasma applet and its QML
   bridge (§12.2).
-- Install for this machine: copy `target/release/abrightd` to
-  `~/.local/bin/abrightd` **after stopping the service** (otherwise `ETXTBSY`).
+- Manual reinstall: copy `target/release/abrightd` to `~/.local/bin/abrightd`
+  **after stopping the service** (otherwise `ETXTBSY`).
 
 ---
 
