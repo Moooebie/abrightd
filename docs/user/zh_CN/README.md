@@ -8,6 +8,4 @@
 | [桌面集成](desktop-integration.md) | KDE Plasma、小部件、冲突处理 |
 | [故障排查](troubleshooting.md) | 硬件确认与常见问题 |
 
-项目总览见[中文 README](../../../README.zh_CN.md)，英文用户文档在
-[`docs/user/`](../)。面向维护者/AI Agent 的实现文档（英文）在
-[`docs/agent/`](../../agent/)。
+项目总览见[中文 README](../../../README.zh_CN.md)。

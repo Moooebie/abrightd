@@ -28,7 +28,7 @@ D-Bus、KDE PowerDevil 或 `sysfs` 调节背光。
 ## 快速开始
 
 ```sh
-git clone <本仓库> && cd abrightd
+git clone https://github.com/Moooebie/abrightd.git && cd abrightd
 ./build.sh            # 一条命令：编译发布版
 ./install.sh          # 一条命令：安装并启动守护进程
 
@@ -48,9 +48,7 @@ abrightd --tui
 
 ## 文档
 
-文档按读者分成两部分：
-
-### 面向用户 —— [`docs/user/`](docs/user/)
+本文档为简体中文；其他语言的文档见仓库中的对应 README。面向用户的中文文档如下：
 
 | 文档 | 内容 |
 |---|---|
@@ -60,16 +58,7 @@ abrightd --tui
 | [桌面集成](docs/user/zh_CN/desktop-integration.md) | KDE Plasma、小部件、冲突处理 |
 | [故障排查](docs/user/zh_CN/troubleshooting.md) | 硬件确认与常见问题 |
 
-（英文用户文档在 [`docs/user/`](docs/user/) 下。）
-
-### 面向维护者 / AI Agent —— [`docs/agent/`](docs/agent/)
-
-| 文档 | 内容 |
-|---|---|
-| [SPECIFICATIONS.md](docs/agent/SPECIFICATIONS.md) | 本移植所实现的完整规格 |
-| [ARCHITECTURE.md](docs/agent/ARCHITECTURE.md) | 核心不变量、模块划分、AOSP 保真度、调试手册 |
-
-`docs/agent/rolling/` 存放临时的、不纳入 git 的工作计划。
+面向维护者与 AI Agent 的规格和实现细节文档目前仅有英文，位于 `docs/agent/`。
 
 ## 状态
 
@@ -77,8 +66,8 @@ abrightd --tui
 `intel_backlight`、KDE Plasma 6）上运行：IIO 输入、AOSP 控制器、
 `logind`/`kde`/`sysfs` 三种输出、校准（`show`/`adjust`/`reset`）、学习状态持久化、
 D-Bus 控制、终端指示器和 Plasma 小部件。仍在计划中：传感器照度校准、引导式多点
-校准向导、长期学习器，以及 GNOME 集成。路线图见
-[SPECIFICATIONS.md](docs/agent/SPECIFICATIONS.md)。
+校准向导、长期学习器，以及 GNOME 集成。路线图见 `docs/agent/SPECIFICATIONS.md`
+（英文）。
 
 ## 许可证
 

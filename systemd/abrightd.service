@@ -1,6 +1,6 @@
 [Unit]
 Description=Automatic brightness daemon (AOSP port)
-Documentation=https://github.com/example/autobrightnessd
+Documentation=https://github.com/Moooebie/abrightd
 After=graphical-session.target
 PartOf=graphical-session.target
 

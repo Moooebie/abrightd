@@ -5,7 +5,7 @@ explains *what* abrightd does and how to use it; this document explains *how it
 is built*, where the sharp edges are, and the conventions to preserve when
 changing it.
 
-If you are an automated agent picking this repo up: read §1–§4 and §17 first,
+If you are an automated agent picking abrightd up: read §1–§4 and §17 first,
 then the module you are touching, then §16 (testing) before submitting.
 
 ---

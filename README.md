@@ -34,7 +34,7 @@ It is a faithful port of the AOSP display classes, not an approximation:
 ## Quick start
 
 ```sh
-git clone <this repo> && cd abrightd
+git clone https://github.com/Moooebie/abrightd.git && cd abrightd
 ./build.sh            # one command: release build
 ./install.sh          # one command: install + start the daemon
 
@@ -65,8 +65,6 @@ The docs are split by audience:
 | [calibration.md](docs/user/calibration.md) | tuning the curve, persistence, reset |
 | [desktop-integration.md](docs/user/desktop-integration.md) | KDE Plasma, the applet, conflict handling |
 | [troubleshooting.md](docs/user/troubleshooting.md) | hardware bring-up and common problems |
-
-中文（简体）：[docs/user/zh_CN/](docs/user/zh_CN/) 与 [README.zh_CN.md](README.zh_CN.md)。
 
 ### For maintainers / AI agents — [`docs/agent/`](docs/agent/)
 
