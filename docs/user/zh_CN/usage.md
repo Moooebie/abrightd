@@ -76,6 +76,7 @@ abrightd --version                                      # 查看版本号
 abrightd --tui [--interval-ms MS]                       # 实时指示器
 abrightd --replay CSV [--dump-brightness]               # 确定性回放
 abrightd --dry-run                                      # 只读传感器，不输出
+abrightd init [--device NAME] [--yes] [--dry-run]        # 探测传感器并写入配置
 
 abrightd calibrate show                                 # 曲线 + 实时快照
 abrightd calibrate adjust --value A | --point LUX BRI   # 设置 / 反推调节量

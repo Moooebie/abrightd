@@ -29,13 +29,16 @@ D-Bus、KDE PowerDevil 或 `sysfs` 调节背光。
 
 ```sh
 git clone https://github.com/Moooebie/abrightd.git && cd abrightd
-./build.sh            # 一条命令：编译发布版
-./install.sh          # 一条命令：安装并启动守护进程
 
-./install-desktop.sh  # 单独一条命令：安装桌面组件（KDE 小部件）
+./configure          # 选择构建变体：./configure 或 ./configure kde
+./build.sh           # 一条命令：编译
+./install.sh         # 一条命令：安装并启动（若配置了桌面则一并安装小部件）
+
+abrightd init        # 探测传感器、选择一个、写入配置——完成
 ```
 
-`make build`、`make install`、`make install-desktop` 作用相同。
+`abrightd init` 会列出探测到的环境光传感器，让你选择要用的那个（并根据桌面环境
+自动选择输出方式），然后写出一份可直接使用的配置——无需手写任何配置。
 
 装好后检查：
 

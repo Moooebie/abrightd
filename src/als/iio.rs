@@ -32,6 +32,57 @@ pub struct IioSysfs {
     clock: std::sync::Arc<dyn Clock>,
 }
 
+/// A discovered IIO ambient-light device.
+#[derive(Debug, Clone)]
+pub struct IioDevice {
+    /// Device directory name, e.g. `iio:device0`.
+    pub name: String,
+    pub device_dir: PathBuf,
+    pub input: PathBuf,
+    pub scale: f32,
+    pub offset: f32,
+}
+
+impl IioDevice {
+    /// Read and scale one lux sample (blocking).
+    pub fn read_lux(&self) -> anyhow::Result<f32> {
+        let raw: f32 = std::fs::read_to_string(&self.input)?.trim().parse()?;
+        Ok(raw * self.scale + self.offset)
+    }
+}
+
+/// List every IIO device that exposes an illuminance channel, sorted by name.
+///
+/// Used by `abrightd init` to offer the user a choice of sensors.
+pub fn list_illuminance_devices() -> anyhow::Result<Vec<IioDevice>> {
+    let mut devices = Vec::new();
+    for entry in std::fs::read_dir(IIO_DEVICES)? {
+        let entry = entry?;
+        if let Some(device) = device_from_dir(&entry.path()) {
+            devices.push(device);
+        }
+    }
+    devices.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(devices)
+}
+
+fn device_from_dir(dir: &Path) -> Option<IioDevice> {
+    if !dir.is_dir() {
+        return None;
+    }
+    let input = INPUT_NAMES
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.exists())?;
+    Some(IioDevice {
+        name: dir.file_name()?.to_string_lossy().into_owned(),
+        device_dir: dir.to_path_buf(),
+        input,
+        scale: read_attr_f32(&dir.join("in_illuminance_scale")).unwrap_or(1.0),
+        offset: read_attr_f32(&dir.join("in_illuminance_offset")).unwrap_or(0.0),
+    })
+}
+
 impl IioSysfs {
     /// Find an IIO ambient-light device.  `device` may be a name
     /// (`iio:device0`), an absolute path, or `None` for auto-discovery.
@@ -112,20 +163,10 @@ impl AlsSource for IioSysfs {
 }
 
 fn find_device() -> anyhow::Result<PathBuf> {
-    let mut candidates = Vec::new();
-    for entry in std::fs::read_dir(IIO_DEVICES)? {
-        let entry = entry?;
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        if INPUT_NAMES.iter().any(|n| dir.join(n).exists()) {
-            candidates.push(dir);
-        }
-    }
-    candidates
+    list_illuminance_devices()?
         .into_iter()
         .next()
+        .map(|device| device.device_dir)
         .ok_or_else(|| anyhow::anyhow!("no IIO device with an illuminance channel found"))
 }
 

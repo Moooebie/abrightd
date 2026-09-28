@@ -301,6 +301,21 @@ impl Config {
         Ok(toml::from_str(text)?)
     }
 
+    /// Write this profile to `path` atomically, with a short header.
+    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = format!(
+            "# abrightd profile — see `docs/user/`; regenerate with `abrightd init`.\n\n{}",
+            toml::to_string_pretty(self)?
+        );
+        let tmp = path.with_extension("toml.tmp");
+        std::fs::write(&tmp, text)?;
+        std::fs::rename(&tmp, path)?;
+        Ok(())
+    }
+
     pub fn mapper(&self) -> anyhow::Result<SimpleMappingStrategy> {
         SimpleMappingStrategy::new(
             &self.curve.lux,

@@ -1,18 +1,26 @@
 #!/bin/sh
-# One-command build of the abrightd daemon.
+# One-command build.  Reads the variant chosen by ./configure.
 #
-#   ./build.sh                 # release build with the TUI + D-Bus features
-#   FEATURES=dbus ./build.sh   # choose cargo features
+#   ./configure [kde]     # choose what to build for (default: daemon only)
+#   ./build.sh            # build (FEATURES overridable)
 set -e
 
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
 
+desktop=none
+if [ -f .abrightd.conf ]; then
+    . ./.abrightd.conf
+    desktop="${DESKTOP:-none}"
+else
+    echo "note: not configured — run ./configure first (building daemon only)."
+fi
+
 features="${FEATURES:-tui}"
 
-echo "== building abrightd (release, features: $features) =="
+echo "== building abrightd (release, features: $features, desktop: $desktop) =="
 cargo build --release --features "$features"
 
 echo
 echo "binary: $here/target/release/abrightd"
-echo "next:   ./install.sh    (and ./install-desktop.sh for the KDE applet)"
+echo "next:   ./install.sh"

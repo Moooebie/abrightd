@@ -1,0 +1,41 @@
+#!/bin/sh
+# Choose the build variant.  Saves it to .abrightd.conf, which ./build.sh and
+# ./install.sh read.
+#
+#   ./configure            # daemon only
+#   ./configure kde        # daemon + KDE Plasma applet
+#
+# GNOME is not implemented yet.
+set -e
+
+here=$(cd "$(dirname "$0")" && pwd)
+cd "$here"
+
+usage() {
+    cat <<'EOF'
+usage: ./configure [variant]
+
+variants:
+  none    daemon only (default)
+  kde     daemon + KDE Plasma applet
+EOF
+}
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    ""|none|daemon) desktop=none ;;
+    kde|plasma) desktop=kde ;;
+    *)
+        echo "configure: unsupported variant '${1}'" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
+printf 'DESKTOP=%s\n' "$desktop" > .abrightd.conf
+echo "configured:"
+echo "  desktop = $desktop"
+echo
+echo "next:"
+echo "  ./build.sh"
+echo "  ./install.sh"

@@ -35,13 +35,17 @@ It is a faithful port of the AOSP display classes, not an approximation:
 
 ```sh
 git clone https://github.com/Moooebie/abrightd.git && cd abrightd
-./build.sh            # one command: release build
-./install.sh          # one command: install + start the daemon
 
-./install-desktop.sh  # separate command: desktop components (KDE applet)
+./configure          # choose the variant:  ./configure  or  ./configure kde
+./build.sh           # one command: build
+./install.sh         # one command: install + start (the applet too, if configured)
+
+abrightd init        # detect the sensor, pick one, write the config — done
 ```
 
-`make build`, `make install` and `make install-desktop` are equivalent.
+`abrightd init` lists the ambient-light sensors it finds, asks which to use
+(auto-detecting the desktop for the right output), and writes a ready-to-use
+profile — no hand-written configuration.
 
 Then check it:
 

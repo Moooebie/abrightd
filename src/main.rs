@@ -9,7 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use abrightd::als::iio::IioSysfs;
+use abrightd::als::iio::{list_illuminance_devices, IioDevice, IioSysfs};
 use abrightd::als::replay::Replay;
 use abrightd::als::AlsSource;
 use abrightd::clock::SystemClock;
@@ -90,6 +90,24 @@ enum Command {
         #[command(subcommand)]
         action: ProfileAction,
     },
+    /// Detect the ambient-light sensor and write a ready-to-use profile.
+    Init(InitArgs),
+}
+
+#[derive(Args, Debug)]
+struct InitArgs {
+    /// Use this IIO device (e.g. `iio:device0`) instead of prompting.
+    #[arg(long)]
+    device: Option<String>,
+    /// Do not prompt; pick the first detected sensor.
+    #[arg(long)]
+    yes: bool,
+    /// Show what would be written without changing anything.
+    #[arg(long)]
+    dry_run: bool,
+    /// Do not restart a running abrightd afterwards.
+    #[arg(long)]
+    no_restart: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -139,6 +157,11 @@ struct AdjustArgs {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     init_tracing(&cli.log_level);
+
+    // `init` may create the profile, so handle it before loading one.
+    if let Some(Command::Init(args)) = &cli.command {
+        return run_init(&cli.config, args).await;
+    }
 
     // Resolve the profile: explicit --config, else the user's default profile.
     let config_path = cli.config.clone().or_else(default_config_path);
@@ -495,6 +518,137 @@ async fn run_integrate_detect(config: &Config) -> anyhow::Result<()> {
     println!("  (built without --features dbus: diagnostics limited)");
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// First-run setup
+// ---------------------------------------------------------------------------
+
+/// `abrightd init`: detect the sensor, pick one, and write a ready-to-use
+/// profile (plus a desktop-appropriate output) so no hand-written config is
+/// needed.
+async fn run_init(config_path: &Option<PathBuf>, args: &InitArgs) -> anyhow::Result<()> {
+    let path = config_path.clone().unwrap_or_else(user_config_path);
+    let existed = path.exists();
+    let mut config = if existed {
+        Config::load(&path)?
+    } else {
+        Config::default()
+    };
+
+    let desktop = Desktop::detect();
+    if !existed {
+        config.output.kind = match desktop {
+            Desktop::Kde => "kde".to_string(),
+            _ => "logind".to_string(),
+        };
+    }
+
+    println!("abrightd init");
+    println!("  profile      {}", path.display());
+    println!("  desktop      {}", desktop.name());
+
+    let devices = list_illuminance_devices().unwrap_or_default();
+    if devices.is_empty() {
+        println!("  sensors      none detected");
+    } else {
+        println!("  sensors:");
+        for (index, device) in devices.iter().enumerate() {
+            let lux = device
+                .read_lux()
+                .map(|value| format!("{value:.1} lx"))
+                .unwrap_or_else(|_| "?".to_string());
+            println!(
+                "    [{}] {}  ({}, {})",
+                index + 1,
+                device.name,
+                device.device_dir.display(),
+                lux
+            );
+        }
+    }
+    let chosen = select_sensor(&devices, args)?;
+    match &chosen {
+        Some(device) => {
+            config.als.kind = "iio".to_string();
+            config.als.device = Some(device.name.clone());
+            println!(
+                "  sensor       {}  ({})",
+                device.name,
+                device.device_dir.display()
+            );
+        }
+        None => println!("  sensor       none detected — leaving auto-discovery"),
+    }
+
+    if args.dry_run {
+        println!("  (dry run: not writing {})", path.display());
+        return Ok(());
+    }
+
+    config.save(&path)?;
+    println!("  wrote        {}", path.display());
+    if let Some(device) = &chosen {
+        match device.read_lux() {
+            Ok(lux) => println!("  reading      {lux:.1} lx"),
+            Err(err) => println!("  reading      unavailable ({err})"),
+        }
+    }
+    if !args.no_restart {
+        restart_if_running();
+    }
+    println!("\nready — `systemctl --user status abrightd`");
+    Ok(())
+}
+
+/// Choose a sensor: explicit `--device`, first one under `--yes`/non-tty, or an
+/// interactive numbered prompt.
+fn select_sensor(devices: &[IioDevice], args: &InitArgs) -> anyhow::Result<Option<IioDevice>> {
+    use std::io::{IsTerminal, Write};
+
+    if let Some(requested) = &args.device {
+        let found = devices
+            .iter()
+            .find(|d| d.name == *requested || d.device_dir.to_string_lossy() == requested.as_str());
+        if found.is_none() {
+            println!("  note: requested device '{requested}' not found");
+        }
+        return Ok(found.cloned());
+    }
+    if devices.is_empty() {
+        return Ok(None);
+    }
+    if args.yes || !std::io::stdin().is_terminal() {
+        return Ok(Some(devices[0].clone()));
+    }
+
+    print!("  Select [1-{}] (default 1): ", devices.len());
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    let index = line
+        .trim()
+        .parse::<usize>()
+        .unwrap_or(1)
+        .clamp(1, devices.len())
+        - 1;
+    Ok(Some(devices[index].clone()))
+}
+
+fn restart_if_running() {
+    let active = std::process::Command::new("systemctl")
+        .args(["--user", "is-active", "--quiet", "abrightd"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if active {
+        let _ = std::process::Command::new("systemctl")
+            .args(["--user", "restart", "abrightd"])
+            .status();
+        println!("  restarted    abrightd");
+    } else {
+        println!("  start it     systemctl --user start abrightd");
+    }
 }
 
 // ---------------------------------------------------------------------------

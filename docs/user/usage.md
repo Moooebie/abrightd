@@ -79,6 +79,7 @@ abrightd --version                                      # print the version
 abrightd --tui [--interval-ms MS]                       # live indicator
 abrightd --replay CSV [--dump-brightness]               # deterministic replay
 abrightd --dry-run                                      # sensor only, no output
+abrightd init [--device NAME] [--yes] [--dry-run]        # detect sensor, write config
 
 abrightd calibrate show                                 # curve + live snapshot
 abrightd calibrate adjust --value A | --point LUX BRI   # set / infer adjustment

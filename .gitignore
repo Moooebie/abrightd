@@ -1,5 +1,8 @@
 /target
 
+# Local build variant chosen by ./configure.
+/.abrightd.conf
+
 # Temporary / rolling plans are deliberately not tracked.
 docs/agent/rolling/
 

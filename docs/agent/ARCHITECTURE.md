@@ -582,17 +582,27 @@ cargo clippy --all-features --all-targets
 - `main.rs` always needs `clap`; only `dbus`/`tui` are optional.  There is no
   `cli` feature (an earlier one was removed because `main.rs` used clap
   unconditionally).
-- **One-command scripts** (also wrapped by `make`):
-  - `build.sh` → `cargo build --release --features ${FEATURES:-tui}`.
-  - `install.sh` → binary to `$PREFIX/bin`, the systemd unit (with paths
-    substituted), a default profile only if absent, then
-    `systemctl --user daemon-reload && enable --now`.
-  - `install-desktop.sh` → desktop components (`--uninstall` to remove); it
-    delegates to `dist/plasma-applet-org.kde.abrightd/install.sh`.
+- **Setup flow** (`configure` → `build` → `install` → `init`), also wrapped by
+  `make`:
+  - `configure [none|kde]` writes `.abrightd.conf` (`DESKTOP=…`, git-ignored).
+    It's the *variant* (which desktop components to install), not cargo
+    features.
+  - `build.sh` → `cargo build --release --features ${FEATURES:-tui}`, echoing
+    the configured variant.
+  - `install.sh` → binary to `$PREFIX/bin`; if absent, a profile created by
+    `abrightd init --yes --no-restart` (which auto-detects the sensor); the
+    systemd unit (paths substituted); `daemon-reload && enable --now`; and, when
+    `DESKTOP=kde`, the applet via
+    `dist/plasma-applet-org.kde.abrightd/install.sh`.
+  - `abrightd init` (CLI) → `list_illuminance_devices()` from `als::iio`, print
+    them with a live lux reading, select (`--device`/`--yes`/prompt), then
+    `Config::save()` a full profile (`[als].device` set, `[output].kind` chosen
+    from `Desktop::detect()`), and `systemctl --user restart` if running.
+  - `install-desktop.sh` → (re)install/remove desktop components standalone.
   - `uninstall.sh` → stops/disables the service and removes binary + unit
     (keeps config and state).
-  - `Makefile` targets: `build`, `install`, `install-desktop`, `uninstall`,
-    `test`, `fmt`, `clippy`, `clean`.
+  - `Makefile` targets: `configure VARIANT=`, `build`, `install`,
+    `install-desktop`, `uninstall`, `test`, `fmt`, `clippy`, `clean`.
 - `systemd/abrightd.service` (`systemd --user`) and
   `udev/90-abrightd-backlight.rules` are shipped.  The unit sets
   `StateDirectory=abrightd`, which systemd may expose as a compatibility

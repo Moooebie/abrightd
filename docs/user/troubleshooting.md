@@ -40,6 +40,10 @@ the sensor/driver (this HID ALS reports `in_illuminance_hysteresis_relative =
 0.01` and has a low-light floor); `last_observed_lux` moving while `lux` lags is
 normal hysteresis + debounce.  The TUI shows both.
 
+**Wrong sensor, or several sensors.**
+Run `abrightd init`: it lists every IIO device with an illuminance channel (and
+a live reading) and lets you pick one.
+
 **The brightness is systematically too high or too low.**
 Calibrate it: `abrightd calibrate adjust --value ±X`, or `--point <lux> <bri>`
 (see [Calibration](calibration.md)).  On KDE, drag the applet's adjustment

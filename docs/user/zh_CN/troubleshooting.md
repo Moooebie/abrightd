@@ -40,6 +40,10 @@ cat /sys/class/backlight/*/max_brightness  # 确认背光范围
 `last_observed_lux` 在变、而 `lux` 滞后，则是正常的滞回 + 去抖。终端指示器会同时
 显示两者。
 
+**传感器选错了，或有多个传感器。**
+运行 `abrightd init`：它会列出所有带照度通道的 IIO 设备（并给出实时读数），让你
+选择要用的那个。
+
 **亮度整体偏高或偏低。**
 做一次校准：`abrightd calibrate adjust --value ±X`，或
 `--point <lux> <bri>`（见[校准](calibration.md)）。在 KDE 上也可以直接拖小部件
