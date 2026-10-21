@@ -3,6 +3,7 @@
 #[cfg(feature = "dbus")]
 pub mod logind;
 pub mod sysfs;
+pub mod tracking;
 
 use async_trait::async_trait;
 

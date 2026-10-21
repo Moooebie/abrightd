@@ -436,10 +436,11 @@ therefore uncalibrated (adjustment 0, no points).
   scanned for an `*ambient*` key to report `Some(true/false)` when a build does
   support it, else `None`.
 
-**Invariants / loop-guard:** the daemon and `KdeSink` share
-`Arc<AtomicI32> last_commanded`; the brightness monitor ignores any value within
-±1 of it, so our own writes are never mistaken for user input.  `KdeSink::set`
-stores the value *before* calling D-Bus.
+**Invariants / loop-guard:** the daemon wraps every sink in
+`output::tracking::TrackingSink`, which records the raw value of each write in
+a shared `Arc<AtomicI32> last_commanded` *before* forwarding it; the brightness
+monitor ignores any value within ±1 of it, so our own writes are never mistaken
+for user input.
 
 **Learning:** on `UserBrightness(f)`, the daemon calls
 `set_screen_brightness_by_user_at(lux, f)` → `prepare_brightness_adjustment_sample`

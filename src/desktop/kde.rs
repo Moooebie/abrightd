@@ -6,7 +6,8 @@
 //! `brightnessChanged` signal to learn from user key presses.
 //!
 //! Writes use `setBrightnessSilent` so auto-brightness does not spam the OSD;
-//! the monitor additionally ignores values matching our own last write.
+//! the monitor additionally ignores values matching the daemon's own last
+//! write, which [`crate::output::tracking::TrackingSink`] records.
 
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
@@ -29,11 +30,10 @@ const DEFAULT_MAX: i32 = 10_000;
 pub struct KdeSink {
     proxy: Proxy<'static>,
     max: i32,
-    last_commanded: Arc<AtomicI32>,
 }
 
 impl KdeSink {
-    pub async fn connect(last_commanded: Arc<AtomicI32>) -> anyhow::Result<Self> {
+    pub async fn connect() -> anyhow::Result<Self> {
         let connection = zbus::Connection::session().await?;
         let proxy = Proxy::new(&connection, SERVICE, BRIGHTNESS_PATH, BRIGHTNESS_IFACE).await?;
         let max: i32 = proxy
@@ -41,11 +41,7 @@ impl KdeSink {
             .await
             .unwrap_or(DEFAULT_MAX)
             .max(1);
-        Ok(Self {
-            proxy,
-            max,
-            last_commanded,
-        })
+        Ok(Self { proxy, max })
     }
 
     pub fn max(&self) -> i32 {
@@ -57,7 +53,6 @@ impl KdeSink {
 impl BacklightSink for KdeSink {
     async fn set(&self, fraction: f32) -> anyhow::Result<()> {
         let value = (fraction.clamp(0.0, 1.0) * self.max as f32).round() as i32;
-        self.last_commanded.store(value, Ordering::Relaxed);
         self.proxy
             .call_method("setBrightnessSilent", &(value,))
             .await?;

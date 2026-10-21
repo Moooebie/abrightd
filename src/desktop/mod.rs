@@ -4,7 +4,8 @@
 //! auto-brightness.  This module detects the desktop and bridges its events
 //! into the daemon as [`Event`]s: user brightness changes and lock/suspend
 //! transitions.  The D-Bus monitors are gated behind the `dbus` feature; the
-//! types themselves are always available.
+//! types themselves are always available.  Without a desktop brightness
+//! service, [`backlight`] watches the sysfs device for user changes instead.
 
 /// Which desktop session we are running under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +52,8 @@ pub enum Event {
     /// The machine is about to suspend (`true`) or just resumed (`false`).
     Suspend(bool),
 }
+
+pub mod backlight;
 
 #[cfg(feature = "dbus")]
 pub mod kde;

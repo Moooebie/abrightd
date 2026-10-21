@@ -65,7 +65,8 @@ short_term_timeout_ms = 1800000
 short_term_threshold_ratio = 0.6
 
 [integration]
-# Learn from desktop brightness keys/slider (KDE PowerDevil).
+# Learn from brightness keys/sliders: PowerDevil signals on KDE Plasma, the
+# sysfs backlight value (polled) everywhere else.
 watch_user_changes = true
 # Pause the sensor while the session is locked or the machine is suspended.
 pause_when_locked = true

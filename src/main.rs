@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
@@ -18,7 +19,6 @@ use abrightd::config::{
 };
 use abrightd::controller::AutomaticBrightnessController;
 use abrightd::daemon::{self, Daemon};
-#[cfg(feature = "dbus")]
 use abrightd::desktop;
 use abrightd::desktop::Desktop;
 use abrightd::desktop::Event;
@@ -26,6 +26,7 @@ use abrightd::mapping::{
     infer_auto_brightness_adjustment, BrightnessMappingStrategy, SimpleMappingStrategy,
 };
 use abrightd::output::sysfs::SysfsBacklight;
+use abrightd::output::tracking::TrackingSink;
 use abrightd::output::BacklightSink;
 use abrightd::ramp::Ramp;
 use abrightd::state::PersistedState;
@@ -33,6 +34,9 @@ use abrightd::status::SharedState;
 
 /// Version shown by `--version`; `dev` off a release tag (see `build.rs`).
 const VERSION: &str = env!("ABRIGHTD_VERSION");
+
+/// How often the sysfs backlight is polled for user changes outside KDE.
+const BACKLIGHT_POLL: Duration = Duration::from_millis(250);
 
 #[derive(Parser, Debug)]
 #[command(
@@ -742,13 +746,15 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
         other => anyhow::bail!("unknown [als] kind: {other}"),
     };
 
+    // Last raw value we wrote (`-1` before the first write); the user-change
+    // monitors ignore readings that match it.
     let last_commanded = Arc::new(AtomicI32::new(-1));
-    let _ = &last_commanded;
+    let desktop = Desktop::detect();
 
     let sink: Box<dyn BacklightSink> = if dry_run {
         Box::new(NullSink)
     } else {
-        match config.output.kind.as_str() {
+        let inner: Box<dyn BacklightSink> = match config.output.kind.as_str() {
             "sysfs" => Box::new(SysfsBacklight::discover(config.output.device.as_deref())?),
             #[cfg(feature = "dbus")]
             "logind" => Box::new(
@@ -756,26 +762,44 @@ async fn run_daemon(config: Config, dry_run: bool) -> anyhow::Result<()> {
                     .await?,
             ),
             #[cfg(feature = "dbus")]
-            "kde" => Box::new(desktop::kde::KdeSink::connect(last_commanded.clone()).await?),
+            "kde" => Box::new(desktop::kde::KdeSink::connect().await?),
             #[cfg(not(feature = "dbus"))]
             "logind" | "kde" => anyhow::bail!(
                 "{0} support was not compiled in; rebuild with --features dbus or use [output] kind = \"sysfs\"",
                 config.output.kind
             ),
             other => anyhow::bail!("unknown [output] kind: {other}"),
-        }
+        };
+        Box::new(TrackingSink::new(inner, last_commanded.clone()))
     };
 
     // Desktop/session event channel: user brightness changes, lock, suspend.
     let (event_tx, event_rx) = tokio::sync::mpsc::channel::<Event>(64);
     #[cfg(feature = "dbus")]
     {
-        let desktop = Desktop::detect();
         if config.integration.pause_when_locked || config.integration.pause_on_suspend {
             desktop::spawn_session_monitor(event_tx.clone());
         }
         if config.integration.watch_user_changes && desktop == Desktop::Kde {
             desktop::kde::spawn_brightness_monitor(event_tx.clone(), last_commanded.clone());
+        }
+    }
+    // No brightness service to listen to: watch the backlight device itself.
+    if config.integration.watch_user_changes && desktop != Desktop::Kde && !dry_run {
+        match SysfsBacklight::discover(config.output.device.as_deref()) {
+            Ok(backlight) => {
+                info!(
+                    "watching sysfs:{} for user brightness changes",
+                    backlight.name()
+                );
+                desktop::backlight::spawn_backlight_monitor(
+                    event_tx.clone(),
+                    backlight,
+                    last_commanded.clone(),
+                    BACKLIGHT_POLL,
+                );
+            }
+            Err(err) => tracing::warn!("not watching for user brightness changes: {err:#}"),
         }
     }
     drop(event_tx);

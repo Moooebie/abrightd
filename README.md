@@ -23,7 +23,8 @@ It is a faithful port of the AOSP display classes, not an approximation:
 - Weighted slow/fast ambient smoothing, ambient and screen hysteresis, and
   debounce — exactly as on Android.
 - Learns from your brightness keys/slider (short-term model) and remembers the
-  result across reboots.
+  result across reboots — via PowerDevil on KDE Plasma, and by watching the
+  backlight device on every other desktop or compositor.
 - Global adjustment (the AOSP "brightness slider" gamma) plus a reset.
 - KDE Plasma integration: PowerDevil output keeps the Plasma UI/OSD in sync,
   and a small **Auto Brightness** panel widget.

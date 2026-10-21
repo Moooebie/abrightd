@@ -4,6 +4,7 @@
 
 - [KDE Plasma](#kde-plasma)
 - [The Plasma applet](#plasma-applet)
+- [Other desktops and compositors](#other-desktops-and-compositors)
 - [GNOME](#gnome)
 
 ## KDE Plasma
@@ -83,6 +84,31 @@ systemctl --user restart plasma-plasmashell.service
 Remove the widget with `./install-desktop.sh --uninstall`.  The applet is
 localized (English and Simplified Chinese); the catalog is installed alongside
 the QML plugin.
+
+## Other desktops and compositors
+
+On anything that is not KDE Plasma (Sway, Hyprland, Niri, river, a bare TTY
+session, ...) there is no brightness service to listen to, so abrightd watches
+the backlight device itself.  Keep the default output and the default
+integration settings:
+
+```toml
+[output]
+kind = "logind"             # or "sysfs"
+
+[integration]
+watch_user_changes = true   # poll /sys/class/backlight/<dev>/brightness
+```
+
+Every 250 ms the daemon reads the device's `brightness` attribute and compares
+it with the last value it wrote.  A value that differs on two consecutive reads
+counts as a user change, whoever made it (`brightnessctl` bound to a key, a bar
+slider, `light`, ...): abrightd records the level against the current lux,
+adopts it instead of ramping back, and persists it like any other user point.
+
+The watcher uses the same device as the output (`[output] device`, or the
+first backlight found).  If the device cannot be found the daemon logs a
+warning and runs without user learning.  It is skipped with `--dry-run`.
 
 ## GNOME
 
